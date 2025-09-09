@@ -25,13 +25,22 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nsmetannikov/ts-evtx.git",
+    "url": "git+https://github.com/nsmetannikov/ts-evtx.git",
     "directory": "packages/ts-evtx-messages"
   },
   "homepage": "https://github.com/nsmetannikov/ts-evtx#readme",
   "bugs": {
     "url": "https://github.com/nsmetannikov/ts-evtx/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "README.md",
+    "package.json"
+  ],
   "dependencies": {
     "better-sqlite3": "^11.0.0",
     "commander": "^12.1.0",

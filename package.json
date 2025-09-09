@@ -1,6 +1,6 @@
 {
   "name": "ts-evtx",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "TypeScript library for parsing Windows Event Log (EVTX) files",
   "main": "dist/index.js",
   "type": "module",
@@ -37,6 +37,11 @@
   "bugs": {
     "url": "https://github.com/nsmetannikov/ts-evtx/issues"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
   "dependencies": {
     "better-sqlite3": "^11.10.0",
     "crc-32": "^1.2.2",
