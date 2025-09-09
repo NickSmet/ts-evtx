@@ -223,13 +223,16 @@ Usage with builder:
 import { evtx } from 'ts-evtx';
 import { SmartManagedMessageProvider } from '@ts-evtx/messages';
 
-const provider = new SmartManagedMessageProvider({ systemEvtxPath: './System.evtx' });
+// Use the packaged universal catalog (no config)
+const provider = new SmartManagedMessageProvider({ preload: true });
+// Or specify a custom DB path:
+// const provider = new SmartManagedMessageProvider({ customDbPath: './my-catalog.db', preload: true });
 const rows = await evtx('Application.evtx').withMessages(provider).last(100).toArray();
 
 Important:
 - withMessages() uses a dynamic import. You only need to install `@ts-evtx/messages`; you do not need to import it in your code.
 - If the package is not installed, `withMessages()` will throw. Install `@ts-evtx/messages` to enable message resolution.
-- Check `event.messageResolved === true` to verify that a message was resolved.
+- For quick use, you can also omit the provider: evtx(file).withMessages(). This uses the packaged universal catalog automatically.
 ```
 
 For a lower-level custom provider, implement the `MessageProvider` interface and pass it via `.withMessages(provider)`.
