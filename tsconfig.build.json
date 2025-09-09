@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Ensure the compiler never treats existing dist artifacts as inputs
+    "rootDir": ".",
+    "outDir": "./dist",
+    "declaration": true,
+    "declarationMap": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/**/*",
+    "index.ts"
+  ],
+  "exclude": [
+    // Avoid TS5055: do not include any generated output as inputs
+    "dist",
+    "dist/**/*",
+    "packages/*/dist",
+    "**/*.d.ts",
+    // Project non-sources
+    "test",
+    "node_modules",
+    "python-source"
+  ]
+}

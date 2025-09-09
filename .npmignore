@@ -1,0 +1,45 @@
+# Source files (keep dist only)
+src/
+test/
+*.test.ts
+*.test.js
+
+# Development files
+debug_scripts/
+python-evtx/
+venv/
+.cache/
+.vscode/
+.DS_Store
+
+# Configuration files
+tsconfig*.json
+jest.config.*
+fix-imports.js
+
+# Example and demo files
+example.ts
+*.evtx
+*.mjs
+*.html
+
+# Debug outputs
+evtx-*.json
+structured-*.json
+debug-*.mjs
+compare-*.mjs
+random-*.mjs
+
+# Documentation (keep README)
+docs/
+*.md
+!README.md
+
+# Development artifacts
+packages/
+messages/
+scripts/
+
+# npm
+node_modules/
+package-lock.json 

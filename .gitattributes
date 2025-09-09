@@ -1,0 +1,9 @@
+* text=auto eol=lf
+
+# Treat databases and EVTX files as binary to avoid diffs
+*.db binary
+*.db-wal binary
+*.db-shm binary
+*.sqlite binary
+*.sqlite3 binary
+*.evtx binary

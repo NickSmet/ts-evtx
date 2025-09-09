@@ -1,0 +1,39 @@
+import { EvtxFile } from "./src/evtx/EvtxFile";
+import { FileHeader } from "./src/evtx/FileHeader";
+import { ChunkHeader } from "./src/evtx/ChunkHeader";
+import { Record, InvalidRecordException } from "./src/evtx/Record";
+import { Block, memoize } from "./src/evtx/Block";
+import { BinaryReader, align, filetimeToDate, crc32Checksum } from "./src/binary/BinaryReader";
+import { BXmlNode } from "./src/evtx/BXmlNode";
+// import { OpenStartElementNode } from "./src/evtx/node-specialisations";
+// import { AttributeNode } from "./src/evtx/node-specialisations";
+// import { ValueNode } from "./src/evtx/node-specialisations";
+// import { TemplateInstanceNode } from "./src/evtx/node-specialisations";
+// import { TemplateNode } from "./src/evtx/node-specialisations";
+// import { NameStringNode } from "./src/evtx/node-specialisations";
+import { SystemToken } from "./src/evtx/enums";
+import { VariantType } from "./src/evtx/enums";
+export { EvtxFile };
+export { FileHeader };
+export { ChunkHeader };
+export { Record, InvalidRecordException };
+export { Block, memoize };
+export { BinaryReader, align, filetimeToDate, crc32Checksum };
+export { BXmlNode };
+// export { OpenStartElementNode, AttributeNode, ValueNode, TemplateInstanceNode, TemplateNode, NameStringNode };
+export { SystemToken, VariantType };
+// Export drop-in replacement functions
+export { 
+// streamlined API
+isEvtxFile, getStats, getRecord, readEvents, parseEvents, } from './src/api';
+// Export original parseEvtxFile as parseEvtxFileAdvanced to avoid conflicts
+export async function parseEvtxFileAdvanced(filePath) {
+    const evtxFile = await EvtxFile.open(filePath);
+    return {
+        file: evtxFile,
+        stats: evtxFile.getStats(),
+        records: evtxFile.records(),
+        chunks: evtxFile.chunks(),
+        getRecord: (num) => evtxFile.getRecord(num),
+    };
+}

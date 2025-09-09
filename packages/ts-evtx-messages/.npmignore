@@ -1,0 +1,15 @@
+# Source files (keep dist only)
+src/
+*.test.ts
+*.test.js
+
+# Development files
+.vscode/
+.DS_Store
+
+# Configuration files
+tsconfig*.json
+
+# npm
+node_modules/
+package-lock.json 

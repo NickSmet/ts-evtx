@@ -1,0 +1,38 @@
+import { EvtxFile } from "./src/evtx/EvtxFile";
+import { FileHeader } from "./src/evtx/FileHeader";
+import { ChunkHeader } from "./src/evtx/ChunkHeader";
+import { Record, InvalidRecordException } from "./src/evtx/Record";
+import { Block, memoize } from "./src/evtx/Block";
+import { BinaryReader, align, filetimeToDate, crc32Checksum } from "./src/binary/BinaryReader";
+import { BXmlNode } from "./src/evtx/BXmlNode";
+import { VariantValue } from "./src/evtx/VariantValue";
+import { SystemToken } from "./src/evtx/enums";
+import { VariantType } from "./src/evtx/enums";
+export { EvtxFile };
+export { FileHeader };
+export { ChunkHeader };
+export { Record, InvalidRecordException };
+export { Block, memoize };
+export { BinaryReader, align, filetimeToDate, crc32Checksum };
+export { BXmlNode };
+export { VariantValue };
+export { SystemToken, VariantType };
+export { setLogger, getLogger, ConsoleLogger, withMinLevel } from './src/logging/logger';
+export type { Logger } from './src/logging/logger';
+export { isEvtxFile, getStats, getRecord, readResolvedEvents, parseResolvedEvents, ResolvedEvent, EventReadOptions, finalMessage, } from './src/api';
+export type { MessageProvider, EvtxParseOptions } from './src/types/MessageProvider';
+export declare function parseEvtxFileAdvanced(filePath: string): Promise<{
+    file: EvtxFile;
+    stats: {
+        fileSize: number;
+        chunkCount: number;
+        nextRecordNumber: bigint;
+        isDirty: boolean;
+        isFull: boolean;
+        majorVersion: number;
+        minorVersion: number;
+    };
+    records: Generator<Record, any, any>;
+    chunks: Generator<ChunkHeader, any, any>;
+    getRecord: (num: bigint) => Record | null;
+}>;
