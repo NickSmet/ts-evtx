@@ -1,6 +1,6 @@
 {
   "name": "@ts-evtx/messages",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Message catalog provider for EVTX event logs (version-aware)",
   "type": "module",
   "main": "dist/index.js",
