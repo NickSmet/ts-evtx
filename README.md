@@ -4,9 +4,8 @@ TypeScript‑native EVTX parser for Node.js. Inspired by and closely aligned wit
 
 -  Parses EVTX records: provider, eventId, level, EventData, and BXML templates + substitutions
 -  Optional human‑readable Message text via companion package: `@ts-evtx/messages` (mirrors Event Viewer behavior)
--  Built for speed and correctness
 
-Note on messages:
+**Note on messages:**
 EVTX files don’t store the final “Message” strings. Windows keeps those in per‑provider message catalogs (DLLs) and combines them with EVTX templates at view time. To reproduce that text here, install `@ts-evtx/messages` and use `.withMessages(...)` in the builder.
 Learn more: see `docs/EVTX_Introduction.md`.
 
@@ -388,56 +387,3 @@ This project is licensed under the MIT License.
 ## Acknowledgments
 
 This library is based on the excellent work of the [python-evtx](https://github.com/williballenthin/python-evtx) project by Willi Ballenthin.
-
-## Gentle Introduction: EVTX, Binary XML, Templates, and Substitutions
-
-Some context on the difficulties associated with parsing evtx files. For more details please review (EVTX_Introduction.md)[./docs/EVTX_Introduction.md]
-
-- **What EVTX is:** Windows Event Log files (EVTX) store events in fixed‑size 64KB chunks. Each chunk contains records (events) and two lookup tables: a string table and a template table. Every event is encoded as Binary XML (BXML), a compact tokenized representation rather than plain text XML.
-- **Binary XML basics:** Instead of literal XML text like <Event><System>…</System></Event>, EVTX encodes nodes as one‑byte tokens (e.g., StartOfStream 0x0F, OpenStartElement 0x01, Attribute 0x06, CloseElement 0x04). Each node has a well‑defined declared length so parsers can skip and index efficiently.
-- **String table:** Tag and attribute names (like Event, Provider, Name) live in the chunk’s string table. Tokens reference names by chunk‑relative offsets. Sometimes the name string appears inline near the token (“inline string”); other times it’s elsewhere in the chunk.
-- **Template table:** Providers define per‑event templates that describe the XML “shape”: which tags appear and where substitutions go. A TemplateInstance node (token 0x0C) points at the Template definition by offset. Templates are small BXML snippets with a single root element and a fixed internal layout.
-- **Substitutions (the dynamic data):** At the end of a BXML Root, you’ll find a substitution header: a 32‑bit count followed by that many (size, type, pad) tuples. The values that follow (numbers, strings, FILETIME, GUIDs, SID, Hex32/64, even BXml) fill the “holes” in the template.
-- **Declared vs consumed bytes (mental model tip):**
-  - Declared length is what the node says it spans (used to locate the substitution header exactly like python‑evtx).
-  - Consumed bytes is how far the reader advanced while parsing. For correct substitution positioning, rely on declared length, not just consumed bytes.
-- **Embedded BXML:** Some substitutions are self‑contained BXML fragments. They include their own TemplateInstance and substitution header. Embedded BXML uses the same absolute chunk address space as the outer record—so precise boundaries matter.
-
-### What this library does
-
-- **Reads EVTX structure:** FileHeader → Chunks → Records, with validation (magic values, CRCs).
-- **Parses Binary XML:** Token by token, constructing nodes with accurate lengths and references to the string and template tables.
-- **Resolves templates:** Loads TemplateNode (resident or table‑based) and builds an ActualTemplateNode for rendering.
-- **Parses substitutions:** Finds the substitution header precisely at the end of declared BXML children, reads declarations, then parses values via VariantValueParser.
-- **Renders XML:** Applies substitutions into the ActualTemplate to produce XML. Embedded BXML substitutions are parsed and rendered recursively.
-
-### Why EVTX is structured this way
-
-- **Space efficiency and speed:** Tokenized XML with shared strings/templates saves space and accelerates parsing.
-- **Stability:** Declared lengths and fixed token formats allow skipping, indexing, and validation even if some records are partially corrupted.
-- **Templating:** Providers ship templates so consumers don’t need custom parsers per event type. Substitutions carry the event’s variable parts.
-
-## Postmortem: Partial Failures We Fixed
-
-Recent work focused on achieving python‑evtx parity for embedded BXML. Two issues caused mismatches and confusing traces:
-
-- **1) Misreading substitution header bytes as tokens (embedded mode):**
-  - Problem: After parsing the embedded TemplateInstance, the parser kept reading tokens and accidentally treated the first substitution count byte (e.g., 0x14) as if it were a token (like CloseElement). That shifted the “declared children length” and made the count/declarations nonsensical.
-  - Fix: In embedded mode, stop token parsing immediately after the TemplateInstance. The substitution header begins right after the TemplateInstance’s declared bytes. Then read count and declarations from that exact baseOffset + declared position (matching python‑evtx).
-
-- **2) Reader side‑effects when loading strings/templates:**
-  - Problem: Looking up NameStringNode or TemplateNode with the main reader advanced its position, so subsequent node parsing started from the wrong offset. This cascaded into wrong tag_length math and boundary checks.
-  - Fix: Load strings/templates using a cloned BinaryReader over the full file bytes. The main parsing cursor stays stable; no hidden side‑effects.
-
-- **3) Inline name strings and tag_length accounting (background):**
-  - Context: OpenStartElement and Attribute nodes may include the name string inline. Getting these lengths right is essential because python‑evtx computes the substitution start from the sum of declared node lengths. The TS implementation now mirrors python’s semantics for inline strings and positioning.
-
-### Outcome
-
-- With the fixes above (bounded embedded parsing after TemplateInstance + cloned readers for string/template loads), embedded BXML mismatches dropped to zero across Application.evtx, System.evtx, and Security.evtx using the included comparison scripts.
-
-### Helpful scripts
-
-- `node debug_scripts/trace-top-level.mjs <file.evtx> <recordNumber>`: Trace top‑level record parsing and substitutions.
-- `node debug_scripts/trace-embedded-bxml.mjs <file.evtx> <recordNumber>`: Trace embedded BXML fragments within a record.
-- `node debug_scripts/compare-xml-evtx.mjs <xml> <evtx> [sampleN]`: Compare events and messages to a trusted XML export.
