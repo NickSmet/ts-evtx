@@ -91,7 +91,7 @@ program
   .description('List distinct providers present in an EVTX file')
   .argument('<evtx>', 'EVTX file path')
   .action(async (file: string) => {
-    const mod: any = await import('ts-evtx');
+    const mod: any = await import('@ts-evtx/core');
     const ev = await mod.EvtxFile.open(file);
     const set = new Set<string>();
     for (const rec of ev.records()) {

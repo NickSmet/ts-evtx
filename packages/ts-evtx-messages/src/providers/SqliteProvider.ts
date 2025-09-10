@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import type { MessageProvider } from '../types';
-// Piggyback on ts-evtx logger so apps configure logging once
-import { getLogger } from 'ts-evtx';
+// Piggyback on @ts-evtx/core logger so apps configure logging once
+import { getLogger } from '@ts-evtx/core';
 
 type SchemaMode =
   | { kind: 'single-table'; hasLanguage: boolean } // messages(provider_name, event_id, message_string[, language])

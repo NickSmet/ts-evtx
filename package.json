@@ -1,5 +1,5 @@
 {
-  "name": "ts-evtx",
+  "name": "@ts-evtx/core",
   "version": "1.0.2",
   "description": "TypeScript library for parsing Windows Event Log (EVTX) files",
   "main": "dist/index.js",
@@ -31,11 +31,14 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nsmetannikov/ts-evtx.git"
+    "url": "git+https://github.com/NickSmet/ts-evtx.git"
   },
-  "homepage": "https://github.com/nsmetannikov/ts-evtx#readme",
+  "homepage": "https://github.com/NickSmet/ts-evtx#readme",
   "bugs": {
-    "url": "https://github.com/nsmetannikov/ts-evtx/issues"
+    "url": "https://github.com/NickSmet/ts-evtx/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "files": [
     "dist",

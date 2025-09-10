@@ -3,7 +3,7 @@ import type { WindowsVersion } from '../types';
 export class WindowsVersionDetector {
   static async detectFromSystemLog(systemEvtxPath: string): Promise<WindowsVersion | null> {
     try {
-      const mod: any = await import('ts-evtx');
+      const mod: any = await import('@ts-evtx/core');
       const file = await mod.EvtxFile.open(systemEvtxPath);
       let scanned = 0;
       for (const rec of file.records()) {
@@ -28,7 +28,7 @@ export class WindowsVersionDetector {
 
   static async detectFromAnyLog(evtxPath: string): Promise<WindowsVersion | null> {
     try {
-      const mod: any = await import('ts-evtx');
+      const mod: any = await import('@ts-evtx/core');
       const file = await mod.EvtxFile.open(evtxPath);
       let scanned = 0;
       for (const rec of file.records()) {

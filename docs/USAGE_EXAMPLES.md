@@ -5,7 +5,7 @@ Copy-paste ready examples for common scenarios.
 ## Fluent Builder
 
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 // Last 100 Application events with auto messages → CSV
 await evtx('./Application.evtx')
@@ -24,7 +24,7 @@ await evtx('./Security.evtx')
 
 ### Just get the events as JSON
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 const events = await evtx('./Security.evtx').toArray();
 console.log(JSON.stringify(events, null, 2));
@@ -32,7 +32,7 @@ console.log(JSON.stringify(events, null, 2));
 
 ### Stream through large files without loading everything
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 await evtx('./Security.evtx').forEach(event => {
   console.log(`${event.timestamp}: ${event.provider?.name} - Event ${event.eventId}`);
@@ -41,14 +41,14 @@ await evtx('./Security.evtx').forEach(event => {
 
 ### Get only the last 100 events
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 const events = await evtx('./Application.evtx').last(100).toArray();
 ```
 
 ### Filter by date range
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 await evtx('./System.evtx')
   .between('2025-01-01T00:00:00Z', '2025-01-31T23:59:59Z')
@@ -59,7 +59,7 @@ await evtx('./System.evtx')
 
 ### One‑liner: auto messages via builder
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 const events = await evtx('./Application.evtx')
   .withMessages()
@@ -71,7 +71,7 @@ const events = await evtx('./Application.evtx')
 
 ### Auto-detect Windows version and download matching catalog
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import { SmartManagedMessageProvider } from '@ts-evtx/messages';
 
 const provider = new SmartManagedMessageProvider({ systemEvtxPath: './System.evtx' });
@@ -82,7 +82,7 @@ const events = await evtx('./Application.evtx').withMessages(provider).toArray()
 
 ### Use a specific pre-downloaded catalog (concrete Velocidex DB)
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import { SqliteMessageProvider } from '@ts-evtx/messages';
 
 const provider = new SqliteMessageProvider('./catalogs/windows.10.enterprise.10.0.17763.amd64.db', { preload: true });
@@ -105,7 +105,7 @@ const provider = new SmartManagedMessageProvider({
 
 ### By Event ID
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 await evtx('./Security.evtx').where({ eventId: [4624, 4625] }).forEach(e => {
   console.log(`${e.timestamp}: ${e.eventData?.TargetUserName}`);
@@ -126,7 +126,7 @@ await evtx('./System.evtx').where(e => typeof e.level === 'number' && e.level <=
 
 ### To CSV
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import { createWriteStream } from 'fs';
 
 const csv = createWriteStream('events.csv');
@@ -141,7 +141,7 @@ csv.end();
 
 ### To SQLite
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import Database from 'better-sqlite3';
 
 const db = new Database('events.db');
@@ -166,7 +166,7 @@ db.close();
 
 ### To Elasticsearch/OpenSearch
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import { Client } from '@elastic/elasticsearch';
 
 const client = new Client({ node: 'http://localhost:9200' });
@@ -179,7 +179,7 @@ await evtx('./Security.evtx').forEach(async e => {
 
 ### Process all EVTX files in a directory
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import { SmartManagedMessageProvider } from '@ts-evtx/messages';
 import { readdirSync } from 'fs';
 import { join } from 'path';
@@ -215,7 +215,7 @@ for (const file of files) {
 
 // worker.js
 import { parentPort, workerData } from 'worker_threads';
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 await evtx(workerData.file).forEach(e => parentPort.postMessage(e));
 ```
@@ -224,7 +224,7 @@ await evtx(workerData.file).forEach(e => parentPort.postMessage(e));
 
 ### Include only specific fields
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 await evtx('./Application.evtx').forEach(event => {
   const minimal = { time: event.timestamp, id: event.eventId, msg: event.message?.substring(0, 100) };
@@ -244,7 +244,7 @@ const provider = new ChainMessageProvider([
 
 ### Monitor EVTX file for new events (tail -f style)
 ```typescript
-import { EvtxFile } from 'ts-evtx';
+import { EvtxFile } from '@ts-evtx/core';
 import { watch } from 'fs';
 
 let lastRecord = 0n;
@@ -273,7 +273,7 @@ watch('./Application.evtx', async (eventType) => {
 
 ### Parse from memory buffer instead of file
 ```typescript
-import { EvtxFile } from 'ts-evtx';
+import { EvtxFile } from '@ts-evtx/core';
 import { readFileSync } from 'fs';
 
 const buffer = readFileSync('./Security.evtx');
@@ -286,7 +286,7 @@ for (const record of file.records()) {
 
 ### Get statistics before processing
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 const stats = await evtx('./Application.evtx').stats();
 console.log(`
@@ -346,7 +346,7 @@ const provider = new SmartManagedMessageProvider({
 
 ### Process in chunks to manage memory
 ```typescript
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 
 const CHUNK_SIZE = 1000;
 let batch = [];

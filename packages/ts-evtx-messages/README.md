@@ -12,12 +12,12 @@ Features
 
 Install
 ```
-npm install ts-evtx @ts-evtx/messages
+npm install @ts-evtx/core @ts-evtx/messages
 ```
 
 Quick start
 ```ts
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import { SmartManagedMessageProvider } from '@ts-evtx/messages';
 
 // Use the packaged universal catalog
@@ -28,10 +28,10 @@ for (const e of events) console.log(e.message);
 
 Logging
 
-This package piggybacks on the ts-evtx centralized logger. Configure logging once via ts-evtx and both packages will use the same logger and level.
+This package piggybacks on the @ts-evtx/core centralized logger. Configure logging once via @ts-evtx/core and both packages will use the same logger and level.
 
 ```ts
-import { setLogger, ConsoleLogger, withMinLevel } from 'ts-evtx';
+import { setLogger, ConsoleLogger, withMinLevel } from '@ts-evtx/core';
 
 // e.g., only info/warn/error
 setLogger(withMinLevel(new ConsoleLogger(), 'info'));
@@ -43,7 +43,7 @@ For convenience, @ts-evtx/messages re-exports setLogger/getLogger/ConsoleLogger:
 import { setLogger, ConsoleLogger } from '@ts-evtx/messages';
 setLogger(new ConsoleLogger());
 // Use withMinLevel from ts-evtx if you need filtering
-// import { withMinLevel } from 'ts-evtx';
+// import { withMinLevel } from '@ts-evtx/core';
 ```
 
 Other ways to choose a catalog

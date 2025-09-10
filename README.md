@@ -15,7 +15,7 @@ Learn more: see `docs/EVTX_Introduction.md`.
 Core:
 
 ```bash
-npm install ts-evtx
+npm install @ts-evtx/core
 ```
 For message resolution install companion package:
 
@@ -23,10 +23,12 @@ For message resolution install companion package:
 npm install @ts-evtx/messages
 ```
 
+Note: this package was previously published as `ts-evtx`. New code should depend on `@ts-evtx/core`.
+
 ## Quick Start
 
 ```typescript
-import { evtx, EvtxFile } from 'ts-evtx';
+import { evtx, EvtxFile } from '@ts-evtx/core';
 import { writeFileSync } from 'fs';
 
 // 1) Save to JSON (array)
@@ -220,7 +222,7 @@ npm install @ts-evtx/messages
 Usage with builder:
 
 ```ts
-import { evtx } from 'ts-evtx';
+import { evtx } from '@ts-evtx/core';
 import { SmartManagedMessageProvider } from '@ts-evtx/messages';
 
 // Use the packaged universal catalog (no config)
@@ -287,7 +289,7 @@ The library does not write to the console by default. Internals use a centralize
 Quick start
 
 ```ts
-import { setLogger, ConsoleLogger } from 'ts-evtx';
+import { setLogger, ConsoleLogger } from '@ts-evtx/core';
 
 // Simple: enable console logging (may be verbose in debug flows)
 setLogger(new ConsoleLogger());
@@ -296,7 +298,7 @@ setLogger(new ConsoleLogger());
 Filtering log levels
 
 ```ts
-import { setLogger, ConsoleLogger, withMinLevel } from 'ts-evtx';
+import { setLogger, ConsoleLogger, withMinLevel } from '@ts-evtx/core';
 
 // Only show info/warn/error (hide debug/trace)
 setLogger(withMinLevel(new ConsoleLogger(), 'info'));
@@ -306,7 +308,7 @@ Integrating with your logger
 
 ```ts
 import pino from 'pino';
-import { setLogger } from 'ts-evtx';
+import { setLogger } from '@ts-evtx/core';
 const p = pino();
 setLogger({
   trace: (m, ...a) => p.trace(m, ...a),
