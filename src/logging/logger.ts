@@ -1,5 +1,12 @@
 export type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error';
 
+/**
+ * PERFORMANCE: Debug logging in hot paths has overhead even with no-op logger
+ * due to string interpolation. Set to true to enable detailed debug logs.
+ * Default: false for production performance.
+ */
+export const ENABLE_DEBUG_LOGGING = process.env.EVTX_DEBUG === 'true' || false;
+
 export interface Logger {
   trace: (msg: any, ...args: any[]) => void;
   debug: (msg: any, ...args: any[]) => void;

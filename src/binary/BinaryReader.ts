@@ -4,15 +4,23 @@ import CRC32 from 'crc-32';
 export class BinaryReader {
   private readonly dataView: DataView;
   private readonly buffer: ArrayBuffer;
+  private readonly byteOffset: number; // PERFORMANCE: Track offset instead of slicing
+  private readonly byteLength: number; // PERFORMANCE: Track length
   private position: number = 0; // Current reading position for streaming
 
   constructor(buffer: ArrayBuffer | Uint8Array) {
     if (buffer instanceof Uint8Array) {
-      this.buffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+      // PERFORMANCE FIX: Don't copy buffer - just reference it with offset/length
+      this.buffer = buffer.buffer;
+      this.byteOffset = buffer.byteOffset;
+      this.byteLength = buffer.byteLength;
     } else {
       this.buffer = buffer;
+      this.byteOffset = 0;
+      this.byteLength = buffer.byteLength;
     }
-    this.dataView = new DataView(this.buffer);
+    // Create DataView with offset and length (no buffer copy!)
+    this.dataView = new DataView(this.buffer, this.byteOffset, this.byteLength);
   }
 
   /* streaming position methods ------------------------------------------------ */
@@ -21,15 +29,15 @@ export class BinaryReader {
   }
 
   seek(position: number): void {
-    if (position < 0 || position > this.buffer.byteLength) {
-      throw new Error(`Invalid seek position: ${position}, buffer size is ${this.buffer.byteLength}`);
+    if (position < 0 || position > this.byteLength) {
+      throw new Error(`Invalid seek position: ${position}, buffer size is ${this.byteLength}`);
     }
     this.position = position;
   }
 
   peek(): number {
-    if (this.position >= this.buffer.byteLength) {
-      throw new Error(`Buffer overrun: trying to peek at position ${this.position}, buffer size is ${this.buffer.byteLength}`);
+    if (this.position >= this.byteLength) {
+      throw new Error(`Buffer overrun: trying to peek at position ${this.position}, buffer size is ${this.byteLength}`);
     }
     return this.dataView.getUint8(this.position);
   }
@@ -196,7 +204,8 @@ export class BinaryReader {
   /* raw slices ---------------------------------------------------------------- */
   bytesAt(offset: number, length: number): Uint8Array {
     this.checkBounds(offset, length);
-    return new Uint8Array(this.buffer, offset, length);
+    // PERFORMANCE FIX: Account for byteOffset when creating Uint8Array
+    return new Uint8Array(this.buffer, this.byteOffset + offset, length);
   }
 
   // Alias for backward compatibility
@@ -206,14 +215,14 @@ export class BinaryReader {
 
   /* bounds checking ----------------------------------------------------------- */
   private checkBounds(offset: number, length: number): void {
-    if (offset < 0 || offset + length > this.buffer.byteLength) {
-      throw new Error(`Buffer overrun: trying to read ${length} bytes at offset ${offset}, buffer size is ${this.buffer.byteLength}`);
+    if (offset < 0 || offset + length > this.byteLength) {
+      throw new Error(`Buffer overrun: trying to read ${length} bytes at offset ${offset}, buffer size is ${this.byteLength}`);
     }
   }
 
   /* size and utilities -------------------------------------------------------- */
   get size(): number {
-    return this.buffer.byteLength;
+    return this.byteLength;
   }
 }
 

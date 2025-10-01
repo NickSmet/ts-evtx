@@ -219,7 +219,7 @@ export class OpenStartElementNode extends BXmlNode {
   }
 
   public get name(): string {
-    return this.chunk.strings().get(this.string_offset)?.name || `UnknownTag_0x${this.string_offset.toString(16)}`;
+    return this.chunk.getString(this.string_offset) || `UnknownTag_0x${this.string_offset.toString(16)}`;
   }
 
   public get length(): number {
@@ -424,7 +424,7 @@ export class AttributeNode extends BXmlNode {
   }
 
   public get name(): string {
-    return this.chunk.strings().get(this.string_offset)?.name || `UnknownAttribute_0x${this.string_offset.toString(16)}`;
+    return this.chunk.getString(this.string_offset) || `UnknownAttribute_0x${this.string_offset.toString(16)}`;
   }
 
   public get value(): any | undefined {
@@ -731,7 +731,7 @@ export class EntityReferenceNode extends BXmlNode {
   }
 
   public get name(): string {
-    return this.chunk.strings().get(this.string_offset)?.name || 'UnknownEntity';
+    return this.chunk.getString(this.string_offset) || 'UnknownEntity';
   }
 
   public entityReference(): string {

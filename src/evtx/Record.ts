@@ -6,7 +6,7 @@ import { NodeFactory } from "./node-factory";
 import { BXmlToken } from "./enums";
 import { TemplateInstanceNode } from "./node-specialisations";
 import { VariantValueParser, ParsedVariant, VariantType } from "./VariantValueParser";
-import { getLogger } from "../logging/logger.js";
+import { getLogger, ENABLE_DEBUG_LOGGING } from "../logging/logger.js";
 
 export class InvalidRecordException extends Error {
   constructor(message: string = "Invalid record") {
@@ -44,29 +44,31 @@ class RootNode extends BXmlNode {
     const bxmlDataLength = parentRecord.size() - 0x18; // 0x18 is the size of the record header
     const endPosition = recordDataOffset + bxmlDataLength;
 
-    this._log.debug(`🔄 RootNode Phase 1: Starting BXML children parsing at offset 0x${r.tell().toString(16)}`);
-    this._log.debug(`📊 RootNode: Record size=${parentRecord.size()}, BXML data length=${bxmlDataLength}, end position=0x${endPosition.toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) {
+      this._log.debug(`🔄 RootNode Phase 1: Starting BXML children parsing at offset 0x${r.tell().toString(16)}`);
+      this._log.debug(`📊 RootNode: Record size=${parentRecord.size()}, BXML data length=${bxmlDataLength}, end position=0x${endPosition.toString(16)}`);
+    }
 
     while (r.tell() < endPosition) {
       if (r.tell() >= r.size) {
-        this._log.debug(`Reached end of buffer at position ${r.tell()}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`Reached end of buffer at position ${r.tell()}`);
         break;
       }
       const currentTokenAt = r.tell();
       const tokenPeek = r.peek();
 
-      this._log.debug(`🔍 RootNode: At offset 0x${currentTokenAt.toString(16)}, peeking token 0x${tokenPeek.toString(16)}`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 RootNode: At offset 0x${currentTokenAt.toString(16)}, peeking token 0x${tokenPeek.toString(16)}`);
 
       let currentToken: number;
       try {
         currentToken = r.peek();
       } catch (error) {
-        this._log.debug(`Cannot peek at position ${r.tell()}, stopping parsing`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`Cannot peek at position ${r.tell()}, stopping parsing`);
         break;
       }
 
       if (bxmlChildrenEndTokens.includes(currentToken)) {
-        this._log.debug(`🛑 RootNode: Found EndOfStream token 0x${currentToken.toString(16)}, stopping BXML parsing`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🛑 RootNode: Found EndOfStream token 0x${currentToken.toString(16)}, stopping BXML parsing`);
         if (currentToken === BXmlToken.EndOfStream) {
           // Don't parse EndOfStream as a child node, just break
           break; // End of BXML children block
@@ -74,16 +76,16 @@ class RootNode extends BXmlNode {
       }
 
       try {
-        this._log.debug(`📝 RootNode: Creating node from token 0x${currentToken.toString(16)}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`📝 RootNode: Creating node from token 0x${currentToken.toString(16)}`);
         const node = this.factory.fromStream(this);
         this.children.push(node);
         this._parsedBxmlChildrenLength += node.length;
-        this._log.debug(`✅ RootNode: Added ${node.constructor.name}, length=${node.length}, total children: ${this.children.length}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ RootNode: Added ${node.constructor.name}, length=${node.length}, total children: ${this.children.length}`);
 
         if (node instanceof TemplateInstanceNode) {
           hasTemplateInstance = true;
           this._templateInstance = node;
-          this._log.debug(`🎯 RootNode: Found TemplateInstanceNode!`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎯 RootNode: Found TemplateInstanceNode!`);
         }
 
         if (node.constructor.name === 'UnimplementedNode') {
@@ -98,13 +100,15 @@ class RootNode extends BXmlNode {
       }
     }
 
-    this._log.debug(`🏁 RootNode Phase 1 Complete: ${this.children.length} children, hasTemplateInstance=${hasTemplateInstance}`);
-    this._log.debug(`📍 RootNode: Now at offset 0x${r.tell().toString(16)} for Phase 2`);
+    if (ENABLE_DEBUG_LOGGING) {
+      this._log.debug(`🏁 RootNode Phase 1 Complete: ${this.children.length} children, hasTemplateInstance=${hasTemplateInstance}`);
+      this._log.debug(`📍 RootNode: Now at offset 0x${r.tell().toString(16)} for Phase 2`);
+    }
     
 
     // --- Phase 2: Parse Substitutions (only if a template instance was involved or if data remains) ---
 
-    this._log.debug(`🔄 RootNode Phase 2: Starting substitution parsing, hasTemplateInstance=${hasTemplateInstance}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 RootNode Phase 2: Starting substitution parsing, hasTemplateInstance=${hasTemplateInstance}`);
     
     // Use relative offset from the end of parsed children
     const rootNodeStartOffset = recordDataOffset;
@@ -219,6 +223,8 @@ class RootNode extends BXmlNode {
 export class Record extends Block {
   private _chunk: ChunkHeader;
   private _log = getLogger('Record');
+  // PERFORMANCE: Cache parsed RootNode to avoid re-parsing
+  private _cachedRoot: BXmlNode | null = null;
 
   constructor(reader: BinaryReader, offset: number, chunk: ChunkHeader) {
     super(reader, offset);
@@ -297,11 +303,14 @@ export class Record extends Block {
   }
 
   /**
-   * Get the root BXml node for this record
+   * Get the root BXml node for this record (PERFORMANCE OPTIMIZED with caching)
    */
   root(): BXmlNode {
-    // Pass 'this' (the Record instance) to the RootNode constructor
-    return new RootNode(this.r, this._chunk, this, this.offset + 0x18);
+    if (!this._cachedRoot) {
+      // Pass 'this' (the Record instance) to the RootNode constructor
+      this._cachedRoot = new RootNode(this.r, this._chunk, this, this.offset + 0x18);
+    }
+    return this._cachedRoot;
   }
 
   /**

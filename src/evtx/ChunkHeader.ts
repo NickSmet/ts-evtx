@@ -26,9 +26,13 @@ const OFF_STRING_TABLE = 0x80;
 const OFF_TEMPLATE_TABLE = 0x180;
 
 export class ChunkHeader extends Block {
+  // PERFORMANCE: Store strings directly instead of NameStringNode objects
+  private _stringCache: Map<number, string> | null = null;
+  // Legacy: Keep for compatibility with addString() API
   private _strings: Map<number, NameStringNode> | null = null;
   private _templates: Map<number, TemplateNode> = new Map();
   private _actualTemplates: Map<number, ActualTemplateNode> = new Map();
+  private _templatesPreloaded = false; // PERFORMANCE: Track if templates are pre-loaded
   private _log = getLogger('ChunkHeader');
 
   constructor(reader: BinaryReader, offset: number) {
@@ -117,7 +121,53 @@ export class ChunkHeader extends Block {
 
   /* String and template loading ----------------------------------------------- */
   /**
-   * Parses and caches the string table for this chunk.
+   * PERFORMANCE OPTIMIZED: Pre-load all strings from the chunk's string table.
+   * Stores plain strings instead of NameStringNode objects and uses single reader.
+   */
+  private _loadStringCache(): void {
+    if (this._stringCache !== null) return;
+    
+    this._stringCache = new Map<number, string>();
+    const visited = new Set<number>();
+    const savedPos = this.r.tell();
+    
+    try {
+      // Parse the 64 string table entries at 0x80
+      for (let i = 0; i < 64; i++) {
+        let ofs = this.u32(OFF_STRING_TABLE + (i * 4));
+        
+        while (ofs > 0 && ofs < this.nextRecordOffset() && !visited.has(ofs)) {
+          visited.add(ofs);
+          
+          // Seek to string location and parse inline (no BinaryReader cloning)
+          this.r.seek(this.offset + ofs);
+          const nextOfs = this.r.u32le();
+          const hash = this.r.u16le();
+          const str = this.r.wstring(); // wstring() reads length automatically
+          
+          this._stringCache.set(ofs, str);
+          ofs = nextOfs;
+        }
+      }
+      
+      // Ensure offset 0 is present (common case)
+      if (!this._stringCache.has(0)) {
+        try {
+          this.r.seek(this.offset + 0);
+          this.r.u32le(); // next offset
+          this.r.u16le(); // hash
+          const str = this.r.wstring(); // wstring() reads length automatically
+          this._stringCache.set(0, str);
+        } catch {}
+      }
+    } finally {
+      this.r.seek(savedPos); // Always restore reader position
+    }
+  }
+
+  /**
+   * Legacy: Parses and caches the string table as NameStringNode objects.
+   * Only used when addString() is called explicitly.
    */
   private _loadStrings(): void {
     if (this._strings !== null) return;
@@ -188,23 +238,80 @@ export class ChunkHeader extends Block {
   }
 
   /**
-   * Get a string from the chunk's string table by offset
+   * Get a string from the chunk's string table by offset (PERFORMANCE OPTIMIZED)
    */
   getString(offset: number): string | null {
-    const stringNode = this.strings().get(offset);
-    return stringNode ? stringNode.name : null;
+    // Use optimized string cache
+    if (this._stringCache === null) {
+      this._loadStringCache();
+    }
+    return this._stringCache!.get(offset) || null;
+  }
+
+  /**
+   * PERFORMANCE: Pre-load all templates from the template table
+   * This is called lazily on first template access
+   */
+  private _preloadTemplates(): void {
+    if (this._templatesPreloaded) return;
+    this._templatesPreloaded = true;
+    
+    try {
+      const visited = new Set<number>();
+      const savedPos = this.r.tell();
+      
+      // Parse the 64 template table entries at 0x180
+      for (let i = 0; i < 64; i++) {
+        let ofs = this.u32(OFF_TEMPLATE_TABLE + (i * 4));
+        
+        while (ofs > 0 && ofs < this.nextRecordOffset() && !visited.has(ofs)) {
+          visited.add(ofs);
+          
+          try {
+            // Create template if not already cached
+            if (!this._templates.has(ofs)) {
+              const templateNode = new TemplateNode(this.r, ofs, this);
+              this._templates.set(ofs, templateNode);
+              
+              // PERFORMANCE: Also pre-create ActualTemplateNode
+              const actualTemplate = new ActualTemplateNode(templateNode);
+              this._actualTemplates.set(ofs, actualTemplate);
+            }
+            
+            // Templates in the table have next_offset at the beginning
+            // Read next offset to follow the chain
+            this.r.seek(this.offset + ofs);
+            ofs = this.r.u32le();
+          } catch (error) {
+            // Skip invalid templates
+            break;
+          }
+        }
+      }
+      
+      this.r.seek(savedPos); // Restore position
+    } catch (error) {
+      // Pre-loading failed, will load on-demand
+      this._log.warn('Template pre-loading failed, will use on-demand loading', error);
+    }
   }
 
   /**
    * Get a template from the chunk's template cache, or create it if not cached
+   * PERFORMANCE: Now pre-loads all templates on first access
    */
   getTemplate(offset: number): TemplateNode | null {
+    // PERFORMANCE: Pre-load templates on first access
+    if (!this._templatesPreloaded) {
+      this._preloadTemplates();
+    }
+    
     if (this._templates.has(offset)) {
       return this._templates.get(offset)!;
     }
 
     try {
-      // Create a new TemplateNode at the specified offset
+      // Fallback: create template if pre-loading missed it
       const templateNode = new TemplateNode(this.r, offset, this);
       this._templates.set(offset, templateNode);
       return templateNode;
@@ -241,8 +348,14 @@ export class ChunkHeader extends Block {
 
   /**
    * Get an ActualTemplateNode (enhanced template) from cache, or create it if not cached
+   * PERFORMANCE: Benefits from template pre-loading
    */
   getActualTemplate(offset: number): ActualTemplateNode | null {
+    // PERFORMANCE: Pre-load templates on first access (also preloads ActualTemplateNode)
+    if (!this._templatesPreloaded) {
+      this._preloadTemplates();
+    }
+    
     if (this._actualTemplates.has(offset)) {
       return this._actualTemplates.get(offset)!;
     }

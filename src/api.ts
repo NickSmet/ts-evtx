@@ -1080,9 +1080,22 @@ async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions 
   } = options;
 
   const timestamp = rec.timestampAsDate().toISOString();
+  
+  // PERFORMANCE: Use fast extraction first, only render XML if needed
+  let info = extractBasicInfoFast(rec);
   let xml = '';
-  try { xml = rec.renderXml(); } catch {}
-  const info = xml ? parseXmlContentDetailed(xml) : {};
+  let xmlRendered = false;
+  
+  // Fallback: If we need message resolution and don't have provider/eventId, render XML
+  if (messageProvider && messageStrategy !== 'none' && (!info.provider?.name || info.eventId == null)) {
+    try {
+      xml = rec.renderXml();
+      xmlRendered = true;
+      // Merge with XML-extracted info
+      const xmlInfo = parseXmlContentDetailed(xml);
+      info = { ...xmlInfo, ...info }; // Prefer fast-extracted fields if available
+    } catch {}
+  }
 
   const dataBuild = buildDataSectionFromRecord(rec, includeDataItems);
 
@@ -1104,6 +1117,10 @@ async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions 
       const provNames: string[] = [];
       provNames.push(canonicalName);
       if (enableAliasLookup) {
+        // PERFORMANCE: Only render XML if alias lookup is needed
+        if (!xmlRendered) {
+          try { xml = rec.renderXml(); xmlRendered = true; } catch {}
+        }
         const aliasAttr = (xml || '').match(/EventSourceName=\"([^\"]+)\"/);
         const alias = aliasAttr?.[1] || canonicalName.replace(/^Microsoft-Windows-/, '');
         if (alias && alias !== canonicalName) provNames.push(alias);
@@ -1219,10 +1236,111 @@ async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions 
       warnings: includeDiagnostics === 'full' ? (warnings.length ? warnings : undefined) : (includeDiagnostics === 'basic' ? (warnings.length ? warnings.slice(0, 1) : undefined) : undefined),
       errors: includeDiagnostics === 'full' ? (errors.length ? errors : undefined) : undefined,
     },
-    ...(includeRawXml && xml ? { raw: { xml } } : {}),
+    // PERFORMANCE: Only render XML if explicitly requested
+    ...((includeRawXml) ? (() => {
+      if (!xmlRendered) {
+        try { xml = rec.renderXml(); xmlRendered = true; } catch {}
+      }
+      return xml ? { raw: { xml } } : {};
+    })() : {}),
   };
 
   return ev;
+}
+
+/**
+ * PERFORMANCE OPTIMIZED: Fast extraction of basic fields without XML rendering
+ * Extracts common fields directly from template structure
+ */
+function extractBasicInfoFast(rec: any): any {
+  try {
+    const rootNode = rec.root() as any;
+    const ti = rootNode.templateInstance?.();
+    if (!ti) return {};
+    
+    const chunk = rootNode.chunk;
+    const actual = chunk.getActualTemplate(ti.template_offset);
+    if (!actual) return {};
+    
+    const subs = rootNode.substitutions || [];
+    const result: any = {};
+    
+    // Helper to extract value from node
+    const extractValue = (node: any): any => {
+      if (node?.data != null) return node.data;
+      if ((node as any)?.substitution_id != null) {
+        const idx = (node as any).substitution_id;
+        if (idx >= 0 && idx < subs.length) return subs[idx];
+      }
+      return null;
+    };
+    
+    // Try to extract fields from template System section
+    const rootElem = actual.rootElement;
+    if (rootElem && rootElem.children) {
+      for (const child of rootElem.children) {
+        if ((child as any).name === 'System' && child.children) {
+          for (const sysChild of child.children) {
+            const childName = (sysChild as any).name;
+            
+            // Provider
+            if (childName === 'Provider' && sysChild.children) {
+              for (const attr of sysChild.children) {
+                if ((attr as any).name === 'Name') {
+                  const val = extractValue(attr.children?.[0]);
+                  if (val != null) {
+                    result.provider = result.provider || {};
+                    result.provider.name = String(val);
+                  }
+                }
+                if ((attr as any).name === 'Guid') {
+                  const val = extractValue(attr.children?.[0]);
+                  if (val != null) {
+                    result.provider = result.provider || {};
+                    result.provider.guid = String(val);
+                  }
+                }
+              }
+            }
+            
+            // EventID
+            if (childName === 'EventID' && sysChild.children?.[0]) {
+              const val = extractValue(sysChild.children[0]);
+              if (val != null) result.eventId = parseInt(String(val), 10);
+            }
+            
+            // Level
+            if (childName === 'Level' && sysChild.children?.[0]) {
+              const val = extractValue(sysChild.children[0]);
+              if (val != null) result.level = parseInt(String(val), 10);
+            }
+            
+            // Channel
+            if (childName === 'Channel' && sysChild.children?.[0]) {
+              const val = extractValue(sysChild.children[0]);
+              if (val != null) result.channel = String(val);
+            }
+            
+            // Computer
+            if (childName === 'Computer' && sysChild.children?.[0]) {
+              const val = extractValue(sysChild.children[0]);
+              if (val != null) result.computer = String(val);
+            }
+            
+            // EventRecordID
+            if (childName === 'EventRecordID' && sysChild.children?.[0]) {
+              const val = extractValue(sysChild.children[0]);
+              if (val != null) result.eventRecordId = parseInt(String(val), 10);
+            }
+          }
+        }
+      }
+    }
+    
+    return result;
+  } catch {
+    return {};
+  }
 }
 
 export async function* readResolvedEvents(filePath: string, options: EventReadOptions = {}): AsyncGenerator<ResolvedEvent> {
@@ -1237,28 +1355,29 @@ export async function* readResolvedEvents(filePath: string, options: EventReadOp
 
   let index = 0;
   let emitted = 0;
-  for (const rec of evtxFile.records()) {
-    index++;
-    if (index < startAt) continue;
-    if (limit && emitted >= limit) break;
+  
+  for (const chunk of evtxFile.chunks()) {
+    for (const rec of chunk.records()) {
+      index++;
+      if (index < startAt) continue;
+      if (limit && emitted >= limit) break;
 
-    // Render XML once to pre-filter cheaply without fully building event
-    let xml = '';
-    try { xml = rec.renderXml(); } catch {}
-    const info = xml ? parseXmlContentDetailed(xml) : {};
+      // PERFORMANCE: Use fast extraction for filtering (no XML rendering)
+      const info = extractBasicInfoFast(rec);
 
-    // Time filters
-    const ts = rec.timestampAsDate().toISOString();
-    if (sinceDate && new Date(ts) < sinceDate) continue;
-    if (untilDate && new Date(ts) > untilDate) continue;
+      // Time filters
+      const ts = rec.timestampAsDate().toISOString();
+      if (sinceDate && new Date(ts) < sinceDate) continue;
+      if (untilDate && new Date(ts) > untilDate) continue;
 
-    // Provider/eventId filters
-    if (eventId != null && info.eventId !== eventId) continue;
-    if (provider && !((info.provider?.name || info.provider?.guid || '').includes(provider))) continue;
+      // Provider/eventId filters
+      if (eventId != null && info.eventId !== eventId) continue;
+      if (provider && !((info.provider?.name || info.provider?.guid || '').includes(provider))) continue;
 
-    const ev = await buildResolvedEventFromRecord(rec, options);
-    emitted++;
-    yield ev;
+      const ev = await buildResolvedEventFromRecord(rec, options);
+      emitted++;
+      yield ev;
+    }
   }
 }
 
@@ -1266,6 +1385,59 @@ export async function parseResolvedEvents(filePath: string, options: EventReadOp
   const out: ResolvedEvent[] = [];
   for await (const ev of readResolvedEvents(filePath, options)) out.push(ev);
   return out;
+}
+
+/**
+ * EXPERIMENTAL: Concurrent chunk processing
+ * Process chunks in batches for potential speedup
+ */
+export async function parseResolvedEventsConcurrent(
+  filePath: string, 
+  options: EventReadOptions = {},
+  batchSize: number = 8
+): Promise<ResolvedEvent[]> {
+  const evtxFile = await EvtxFile.open(filePath);
+  const chunks = Array.from(evtxFile.chunks());
+  const allEvents: ResolvedEvent[] = [];
+  
+  // Process chunks in batches
+  for (let i = 0; i < chunks.length; i += batchSize) {
+    const batch = chunks.slice(i, i + batchSize);
+    
+    // Process batch concurrently
+    const batchPromises = batch.map(async (chunk) => {
+      const chunkEvents: ResolvedEvent[] = [];
+      
+      for (const record of chunk.records()) {
+        // Apply filters
+        const info = extractBasicInfoFast(record);
+        
+        // Time filters
+        const ts = record.timestampAsDate().toISOString();
+        if (options.since && new Date(ts) < new Date(options.since as any)) continue;
+        if (options.until && new Date(ts) > new Date(options.until as any)) continue;
+        
+        // Provider/eventId filters
+        if (options.eventId != null && info.eventId !== options.eventId) continue;
+        if (options.provider && !((info.provider?.name || info.provider?.guid || '').includes(options.provider))) continue;
+        
+        const ev = await buildResolvedEventFromRecord(record, options);
+        chunkEvents.push(ev);
+      }
+      
+      return chunkEvents;
+    });
+    
+    // Wait for all chunks in batch to complete
+    const batchResults = await Promise.all(batchPromises);
+    
+    // Collect events from batch (maintains chunk order within batch)
+    for (const chunkEvents of batchResults) {
+      allEvents.push(...chunkEvents);
+    }
+  }
+  
+  return allEvents;
 }
 
 export function finalMessage(e: ResolvedEvent): string | undefined {
