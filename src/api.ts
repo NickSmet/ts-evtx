@@ -523,12 +523,16 @@ function applyMessageTemplate(template: string, args: string[]): string {
   s = s.replace(/%(\d+)!([^!]*)!/g, (_, n) => {
     const i = parseInt(n, 10) - 1; return args[i] ?? '';
   });
-  // Plain %1..%n placeholders
+  // Plain %1..%n placeholders (but not %n for newline, %t for tab, %r for carriage return, %b for space)
   s = s.replace(/%(\d+)/g, (_, n) => {
     const i = parseInt(n, 10) - 1; return args[i] ?? '';
   });
-  // Windows catalogs often use %n for newline
-  s = s.replace(/%n/g, '\n');
+  // Windows message formatting escape sequences
+  s = s.replace(/%n/g, '\n');    // newline
+  s = s.replace(/%t/g, ' ');     // tab -> space (more readable in console output)
+  s = s.replace(/%r/g, '');      // carriage return -> remove
+  s = s.replace(/%b/g, ' ');     // space
+  s = s.replace(/%%/g, '%');     // escaped percent sign
   // Also support {0}-style placeholders
   s = s.replace(/\{(\d+)\}/g, (_, n) => {
     const i = parseInt(n, 10); return args[i] ?? '';

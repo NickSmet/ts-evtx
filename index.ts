@@ -33,8 +33,9 @@ export type { MessageProvider, EvtxParseOptions } from './src/types/MessageProvi
 export { evtx } from './src/query';
 export type { EvtxQuery } from './src/query';
 
-// Export experimental concurrent parsing
-export { parseResolvedEventsConcurrent } from './src/api';
+// Export resolved events API
+export { parseResolvedEvents, readResolvedEvents, parseResolvedEventsConcurrent } from './src/api';
+export type { ResolvedEvent, EventReadOptions } from './src/api';
 
 // Logging API (silent by default; consumer-configurable)
 export { setLogger, getLogger, ConsoleLogger, withMinLevel } from './src/logging/logger';
