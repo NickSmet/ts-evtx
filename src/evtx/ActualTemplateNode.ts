@@ -6,6 +6,22 @@ import { VariantType } from './enums.js';
 import { BXmlParser } from './BXmlParser';
 import { getLogger, ENABLE_DEBUG_LOGGING } from '../logging/logger.js';
 
+// Matches XML special characters and invalid XML control chars (all except tab,
+// newline and carriage return) in a single pass. Kept module-level so the regex
+// is compiled once rather than per call.
+const XML_ESCAPE_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F&<>"']/g;
+const XML_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#x27;',
+};
+function escapeXmlChar(ch: string): string {
+  // Special chars map to entities; matched control chars are stripped.
+  return XML_ENTITIES[ch] ?? '';
+}
+
 /**
  * Enhanced template node that provides complete template parsing and XML rendering capabilities
  * Template node with helpers to extract EventData/UserData layouts and build args
@@ -308,17 +324,8 @@ export class ActualTemplateNode {
 
   private escapeXml(text: string): string {
     if (text === null || text === undefined) return '';
-    
-    // First, remove invalid XML characters (control chars except tab, newline, carriage return)
-    const cleanText = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '');
-    
-    // Then escape XML special characters
-    return cleanText
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#x27;');
+    // Single pass: strip invalid control chars and escape XML specials at once.
+    return text.replace(XML_ESCAPE_RE, escapeXmlChar);
   }
 
   /**
