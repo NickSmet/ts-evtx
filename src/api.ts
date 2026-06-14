@@ -1004,59 +1004,6 @@ export async function parseResolvedEvents(filePath: string, options: EventReadOp
   return out;
 }
 
-/**
- * EXPERIMENTAL: Concurrent chunk processing
- * Process chunks in batches for potential speedup
- */
-export async function parseResolvedEventsConcurrent(
-  filePath: string, 
-  options: EventReadOptions = {},
-  batchSize: number = 8
-): Promise<ResolvedEvent[]> {
-  const evtxFile = await EvtxFile.open(filePath);
-  const chunks = Array.from(evtxFile.chunks());
-  const allEvents: ResolvedEvent[] = [];
-  
-  // Process chunks in batches
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    
-    // Process batch concurrently
-    const batchPromises = batch.map(async (chunk) => {
-      const chunkEvents: ResolvedEvent[] = [];
-      
-      for (const record of chunk.records()) {
-        // Apply filters
-        const info = extractBasicInfoFast(record);
-        
-        // Time filters
-        const ts = record.timestampAsDate().toISOString();
-        if (options.since && new Date(ts) < new Date(options.since as any)) continue;
-        if (options.until && new Date(ts) > new Date(options.until as any)) continue;
-        
-        // Provider/eventId filters
-        if (options.eventId != null && info.eventId !== options.eventId) continue;
-        if (options.provider && !((info.provider?.name || info.provider?.guid || '').includes(options.provider))) continue;
-        
-        const ev = await buildResolvedEventFromRecord(record, options);
-        chunkEvents.push(ev);
-      }
-      
-      return chunkEvents;
-    });
-    
-    // Wait for all chunks in batch to complete
-    const batchResults = await Promise.all(batchPromises);
-    
-    // Collect events from batch (maintains chunk order within batch)
-    for (const chunkEvents of batchResults) {
-      allEvents.push(...chunkEvents);
-    }
-  }
-  
-  return allEvents;
-}
-
 export function finalMessage(e: ResolvedEvent): string | undefined {
   return e.messageResolution.final?.message;
 }

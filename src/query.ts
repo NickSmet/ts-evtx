@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { parseResolvedEvents, parseResolvedEventsConcurrent, readResolvedEvents } from './api';
+import { parseResolvedEvents, readResolvedEvents } from './api';
 import type { ResolvedEvent } from './api';
 
 type MessageMode = 'auto' | 'off' | object | string; // object is a MessageProvider; string is a DB path
@@ -171,30 +171,15 @@ class EvtxQueryImpl implements EvtxQuery {
       const exists = typeof input === 'string' ? fs.existsSync(input) : true;
       if (!exists) continue;
       
-      // PERFORMANCE: Auto-enable concurrent processing when message provider is present
-      // Concurrent gives 3x speedup with async I/O (DB queries) but no benefit for pure parsing
-      const useConcurrent = provider !== undefined;
-      const batchSize = 8; // Optimal batch size for message provider workloads
-      
-      const evs = useConcurrent
-        ? await parseResolvedEventsConcurrent(input as string, {
-            includeXml: this.opts.includeXml,
-            includeDiagnostics: 'basic',
-            includeDataItems: 'summary',
-            messageProvider: provider,
-            since: this.since,
-            until: this.until,
-            last: this.takeLast,
-          } as any, batchSize)
-        : await parseResolvedEvents(input as string, {
-            includeXml: this.opts.includeXml,
-            includeDiagnostics: 'basic',
-            includeDataItems: 'summary',
-            messageProvider: provider,
-            since: this.since,
-            until: this.until,
-            last: this.takeLast,
-          } as any);
+      const evs = await parseResolvedEvents(input as string, {
+        includeXml: this.opts.includeXml,
+        includeDiagnostics: 'basic',
+        includeDataItems: 'summary',
+        messageProvider: provider,
+        since: this.since,
+        until: this.until,
+        last: this.takeLast,
+      } as any);
       
       if (this.messageMode !== 'off') {
         all.push(...evs.map(e => ({ ...e, message: this.buildSimpleMessage(e) })));
