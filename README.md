@@ -7,7 +7,6 @@ TypeScript‑native EVTX parser for Node.js. Inspired by and closely aligned wit
 
 **Note on messages:**
 EVTX files don’t store the final “Message” strings. Windows keeps those in per‑provider message catalogs (DLLs) and combines them with EVTX templates at view time. To reproduce that text here, install `@ts-evtx/messages` and use `.withMessages(...)` in the builder.
-Learn more: see `docs/EVTX_Introduction.md`.
 
 ## Installation
 
@@ -68,8 +67,10 @@ The main class for working with EVTX files.
 
 #### Static Methods
 
-- `EvtxFile.open(path: string): Promise<EvtxFile>` - Open an EVTX file asynchronously
-- `EvtxFile.openSync(path: string): EvtxFile` - Open an EVTX file synchronously
+- `EvtxFile.open(path: string): Promise<EvtxFile>` - Open an EVTX file asynchronously (loads the whole file into memory; convenient for random access such as `getRecord`)
+- `EvtxFile.openSync(path: string): EvtxFile` - Open an EVTX file synchronously (loads the whole file into memory)
+- `EvtxFile.streamRecords(path: string): AsyncGenerator<Record>` - Stream records by reading one 64KB chunk at a time from disk. Keeps only the file header (4KB) and the current chunk resident, so peak memory stays bounded regardless of file size. Yields records in the same order as `records()`. Preferred for large files.
+- `EvtxFile.readStats(path: string): Promise<{ fileSize, chunkCount, nextRecordNumber, isDirty, isFull, majorVersion, minorVersion }>` - Read only the 4KB file header and return file statistics without loading the whole file
 
 #### Properties
 
@@ -194,7 +195,13 @@ The library is designed for performance:
 - Streaming iteration to handle large files
 - Efficient memory usage with views instead of copies
 - CRC32 validation for data integrity
-- Full template caching for repeated template usage
+- Full template caching for repeated template usage (per chunk)
+
+### Memory & large files
+
+- The builder (`evtx(...)`) and the resolved-events API (`parseResolvedEvents`/`readResolvedEvents`) parse one 64KB chunk at a time, so peak raw-buffer memory stays bounded (~one chunk) regardless of file size. Each EVTX chunk is self-contained, so per-chunk parsing is equivalent to whole-file parsing.
+- For direct low-level access, prefer `EvtxFile.streamRecords(path)` over `EvtxFile.open(path)` on large files: `open`/`openSync` load the entire file into memory, while `streamRecords` does not.
+- There is no artificial file-size limit; very large files are handled via the streaming path.
 
 ## Structured JSON & Streaming
 
@@ -332,7 +339,7 @@ Notes
 
 ## More Examples
 
-For more details and advanced usage (CSV/JSONL sinks, batching), see USAGE_EXAMPLES.md.
+For more details and advanced usage (CSV/JSONL sinks, batching), see [docs/USAGE_EXAMPLES.md](docs/USAGE_EXAMPLES.md).
 
 ## Debugging & Tracing (dev-only)
 
@@ -350,26 +357,6 @@ Preferred workflow is XML parity against an exported log from the same system.
   ```
 
 The script resolves messages via `@ts-evtx/messages` and reports mismatches in provider, eventId, timestamp and message. This is more reliable than cross‑language comparisons and keeps iteration focused on our own rendering logic.
-
-## CLI Utilities
-
-Two helper scripts are included for common workflows (kept outside the library API to keep the core minimal):
-
-- `evtx-query.mjs` — flexible JSON exporter with filters and message provider support
-  - Examples:
-    - Last 100 events (pretty JSON):
-      - `node evtx-query.mjs --input ./test/fixtures/Application.evtx --last 100 --pretty --out last-100.json`
-    - With message provider for final message formatting (via @ts-evtx/messages):
-      - `node evtx-query.mjs --input ./test/fixtures/Application.evtx --last 200 --out last-200.json`
-    - Provider/eventId/temporal filters:
-      - `node evtx-query.mjs --input Application.evtx --provider Microsoft-Windows-CAPI2 --event-id 4097 --since 2025-06-01T00:00:00Z`
-
-- `evtx-to-json.mjs` — export all events; has `--structured-only`, `--include-xml`, and pagination options.
-
-
-## Demo Script
-
-See `demo-application-events.mjs` for a complete example of parsing Application event logs.
 
 ## Contributing
 

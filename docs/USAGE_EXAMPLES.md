@@ -271,17 +271,31 @@ watch('./Application.evtx', async (eventType) => {
 });
 ```
 
-### Parse from memory buffer instead of file
+### Stream records from disk with bounded memory
 ```typescript
 import { EvtxFile } from '@ts-evtx/core';
-import { readFileSync } from 'fs';
 
-const buffer = readFileSync('./Security.evtx');
-const file = new EvtxFile(new Uint8Array(buffer));
-
-for (const record of file.records()) {
+// streamRecords reads one 64KB chunk at a time, so peak memory stays bounded
+// (~one chunk) regardless of file size. Prefer this over open()/openSync() for
+// large files — those load the entire file into memory.
+for await (const record of EvtxFile.streamRecords('./Security.evtx')) {
   console.log(record.renderXml());
 }
+
+// Read file-level stats without loading the whole file (reads only the 4KB header)
+const stats = await EvtxFile.readStats('./Security.evtx');
+console.log(stats.chunkCount, stats.nextRecordNumber);
+```
+
+### Load a whole file for random access
+```typescript
+import { EvtxFile } from '@ts-evtx/core';
+
+// open()/openSync() keep the entire file resident, which is handy for random
+// access by record number.
+const file = await EvtxFile.open('./Security.evtx');
+const record = file.getRecord(1234n);
+if (record) console.log(record.renderXml());
 ```
 
 ### Get statistics before processing
@@ -297,35 +311,6 @@ console.log(`
   First record: ${stats.oldestRecord}
   Last record: ${stats.newestRecord}
 `);
-```
-
-## CLI One-Liners
-
-### Export last 1000 events to JSON
-```bash
-node evtx-query.mjs --input Application.evtx --last 1000 --out recent.json
-```
-
-### Filter by provider and event ID
-```bash
-node evtx-query.mjs --input Security.evtx \
-  --provider Microsoft-Windows-Security-Auditing \
-  --event-id 4624,4625 \
-  --out logons.json
-```
-
-### Export with message resolution
-```bash
-# Auto-detect, download, and export with messages
-node evtx-query.mjs --input Application.evtx --with-messages --system System.evtx --out events.json
-
-# Or choose an OS hint (no System.evtx required)
-node evtx-query.mjs --input Application.evtx --with-messages --os-hint win10 --out events.json
-```
-
-### Convert entire log to JSON
-```bash
-node evtx-to-json.mjs Application.evtx > application.json
 ```
 
 ## Performance Tips

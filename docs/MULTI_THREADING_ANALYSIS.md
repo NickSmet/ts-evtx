@@ -1,5 +1,13 @@
 # Multi-Threading Analysis & Results
 
+> **Update (June 2026):** The streaming recommendation in this analysis is now
+> implemented. `EvtxFile.streamRecords(path)` reads one 64KB chunk at a time from
+> disk and the resolved-events API streams through it, keeping peak memory bounded
+> to ~one chunk. The short-lived `Promise.all()` "concurrent" path was also
+> removed (synchronous parsing and synchronous SQLite catalog reads gave it
+> nothing to overlap). Multi-threading via worker threads remains unimplemented,
+> for the reasons below.
+
 ## Executive Summary
 
 **Finding**: Multi-threaded chunk parsing with worker threads is **slower** than sequential parsing due to worker creation overhead.

@@ -14,7 +14,6 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "example": "ts-node example.ts",
     "prepublishOnly": "npm run build",
     "compare:app": "node debug_scripts/compare-xml-evtx.mjs ./test/fixtures/Application.xml ./test/fixtures/Application.evtx 50"
   },
