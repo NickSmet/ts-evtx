@@ -1,0 +1,46 @@
+{
+  "System.evtx": {
+    "xml": {
+      "records": 1247,
+      "rendered": 1247,
+      "hash": "7523b320e7dadcfe9fbd10da5e114e9626c633c7e23e6e77d12de297c35c938c"
+    },
+    "resolved": {
+      "count": 1247,
+      "hash": "f5858607300c750725fdeb808659ed201ce100e87c82c614c4e6fc630241599e"
+    }
+  },
+  "Application.evtx": {
+    "xml": {
+      "records": 366,
+      "rendered": 366,
+      "hash": "6722d23c21d345f720150aa7d261180ce03269ef7fd43fcb0a5ba3c91a223be2"
+    },
+    "resolved": {
+      "count": 366,
+      "hash": "3dbb8984d6748d3640dbfd44d8aa1f0238dc5e3f58b6987d674c855cc7101379"
+    }
+  },
+  "Security.evtx": {
+    "xml": {
+      "records": 1715,
+      "rendered": 1715,
+      "hash": "6bb4702927cd8d58f4cea7d778318fba1731cd352e22cc517ed91e738b045f07"
+    },
+    "resolved": {
+      "count": 1715,
+      "hash": "9f098543a7815a08cd3ee24e9ba48abd562c143441f21be16be211ef97536768"
+    }
+  },
+  "test.evtx": {
+    "xml": {
+      "records": 7632,
+      "rendered": 7632,
+      "hash": "de080da48cf1c4fbe2aeb32f53a8d9b992703549e9cc3ce6bf14000555e299fa"
+    },
+    "resolved": {
+      "count": 7632,
+      "hash": "fadbc2c87afb8d44370d5356097e7aa40221ca3a7a90a403d52b0f83d65f4ea2"
+    }
+  }
+}
