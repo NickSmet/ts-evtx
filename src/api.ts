@@ -963,39 +963,38 @@ function extractBasicInfoFast(rec: any): any {
 
 export async function* readResolvedEvents(filePath: string, options: EventReadOptions = {}): AsyncGenerator<ResolvedEvent> {
   const { eventId, provider, since, until, start, last, limit } = options;
-  const evtxFile = await EvtxFile.open(filePath);
   const sinceDate = since ? new Date(since as any) : null;
   const untilDate = until ? new Date(until as any) : null;
-  const stats = evtxFile.getStats();
+  // Stream chunk-by-chunk to keep memory bounded; read only the header up front
+  // for the total record count needed by the `last` option.
+  const stats = await EvtxFile.readStats(filePath);
   const totalRecords = Number(stats.nextRecordNumber) - 1;
   let startAt = start ?? 1;
   if (last && last > 0) startAt = Math.max(1, totalRecords - last + 1);
 
   let index = 0;
   let emitted = 0;
-  
-  for (const chunk of evtxFile.chunks()) {
-    for (const rec of chunk.records()) {
-      index++;
-      if (index < startAt) continue;
-      if (limit && emitted >= limit) break;
 
-      // PERFORMANCE: Use fast extraction for filtering (no XML rendering)
-      const info = extractBasicInfoFast(rec);
+  for await (const rec of EvtxFile.streamRecords(filePath)) {
+    index++;
+    if (index < startAt) continue;
+    if (limit && emitted >= limit) break;
 
-      // Time filters
-      const ts = rec.timestampAsDate().toISOString();
-      if (sinceDate && new Date(ts) < sinceDate) continue;
-      if (untilDate && new Date(ts) > untilDate) continue;
+    // PERFORMANCE: Use fast extraction for filtering (no XML rendering)
+    const info = extractBasicInfoFast(rec);
 
-      // Provider/eventId filters
-      if (eventId != null && info.eventId !== eventId) continue;
-      if (provider && !((info.provider?.name || info.provider?.guid || '').includes(provider))) continue;
+    // Time filters
+    const ts = rec.timestampAsDate().toISOString();
+    if (sinceDate && new Date(ts) < sinceDate) continue;
+    if (untilDate && new Date(ts) > untilDate) continue;
 
-      const ev = await buildResolvedEventFromRecord(rec, options);
-      emitted++;
-      yield ev;
-    }
+    // Provider/eventId filters
+    if (eventId != null && info.eventId !== eventId) continue;
+    if (provider && !((info.provider?.name || info.provider?.guid || '').includes(provider))) continue;
+
+    const ev = await buildResolvedEventFromRecord(rec, options);
+    emitted++;
+    yield ev;
   }
 }
 
