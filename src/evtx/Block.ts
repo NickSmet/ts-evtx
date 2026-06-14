@@ -1,26 +1,6 @@
 import { BinaryReader } from "../binary/BinaryReader";
 
-// Memoization decorator
-export function memoize(
-  target: any,
-  key: string,
-  descriptor: PropertyDescriptor
-) {
-  const fn = descriptor.value;
-  const cacheKey = Symbol(key);
-  descriptor.value = function (this: any, ...args: any[]) {
-    const map = this.__cache ?? (this.__cache = new Map());
-    const k = JSON.stringify(args);
-    if (!map.has(cacheKey)) map.set(cacheKey, new Map());
-    const sub = map.get(cacheKey);
-    if (!sub.has(k)) sub.set(k, fn.apply(this, args));
-    return sub.get(k);
-  };
-}
-
 export abstract class Block {
-  private __cache?: Map<symbol, Map<string, any>>;
-
   constructor(protected readonly r: BinaryReader, public readonly offset: number) {}
 
   /** Convert relative → absolute offset */
