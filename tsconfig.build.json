@@ -13,11 +13,14 @@
     "index.ts"
   ],
   "exclude": [
-    // Avoid TS5055: do not include any generated output as inputs
+    // Avoid TS5055: do not include any generated output as inputs.
+    // NOTE: do not blanket-exclude "**/*.d.ts" — that would drop the handwritten
+    // ambient shim src/types/external.d.ts (declare module '@ts-evtx/messages'),
+    // which lets core compile standalone without the optional messages package
+    // being built. Generated declarations live under dist/ (already excluded).
     "dist",
     "dist/**/*",
     "packages/*/dist",
-    "**/*.d.ts",
     // Project non-sources
     "test",
     "node_modules",
