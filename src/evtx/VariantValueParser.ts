@@ -5,6 +5,10 @@ import { getLogger } from '../logging/logger.js';
 // Re-export VariantType for other modules
 export { VariantType };
 
+// Precomputed lowercase two-char hex for every byte value, so per-byte hex
+// formatting is a table lookup instead of toString(16).padStart() allocations.
+const HEX_BYTE: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+
 // Placeholder for actual variant value types
 export type ParsedVariant = string | number | bigint | Date | Uint8Array | object | null | boolean | string[];
 
@@ -305,7 +309,9 @@ export class VariantValueParser {
     this.r.seek(this.r.tell() + 8);
     
     // Format as standard GUID string
-    const data4Hex = Array.from(data4).map(b => b.toString(16).padStart(2, '0')).join('');
+    const data4Hex =
+      HEX_BYTE[data4[0]] + HEX_BYTE[data4[1]] + HEX_BYTE[data4[2]] + HEX_BYTE[data4[3]] +
+      HEX_BYTE[data4[4]] + HEX_BYTE[data4[5]] + HEX_BYTE[data4[6]] + HEX_BYTE[data4[7]];
     return `{${data1.toString(16).padStart(8, '0')}-${data2.toString(16).padStart(4, '0')}-${data3.toString(16).padStart(4, '0')}-${data4Hex.substring(0, 4)}-${data4Hex.substring(4)}}`.toUpperCase();
   }
 

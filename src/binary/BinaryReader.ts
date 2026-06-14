@@ -1,6 +1,9 @@
 // Import CRC32
 import CRC32 from 'crc-32';
 
+// Reused stateless decoder for UTF-16LE wide strings (avoids per-call allocation).
+const UTF16LE_DECODER = new TextDecoder('utf-16le');
+
 export class BinaryReader {
   private readonly dataView: DataView;
   private readonly buffer: ArrayBuffer;
@@ -112,12 +115,11 @@ export class BinaryReader {
 
   wstring(): string {
     const length = this.u16le(); // String length in characters
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      const char = this.u16le();
-      result += String.fromCharCode(char);
-    }
-    return result;
+    if (length === 0) return '';
+    const byteLen = length * 2;
+    const bytes = this.bytesAt(this.position, byteLen);
+    this.position += byteLen;
+    return UTF16LE_DECODER.decode(bytes);
   }
 
   readBuffer(length: number): Uint8Array {
