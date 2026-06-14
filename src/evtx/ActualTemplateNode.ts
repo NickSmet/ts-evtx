@@ -22,6 +22,8 @@ function escapeXmlChar(ch: string): string {
   return XML_ENTITIES[ch] ?? '';
 }
 
+type DataLayout = Array<{ name?: string | null; parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> }>;
+
 /**
  * Enhanced template node that provides complete template parsing and XML rendering capabilities
  * Template node with helpers to extract EventData/UserData layouts and build args
@@ -30,6 +32,13 @@ export class ActualTemplateNode {
   private _templateNode: TemplateNode;
   private _rootElement: BXmlNode | null = null;
   private _log = getLogger('ActualTemplateNode');
+
+  // Per-substitution-array memoization of computed layouts. Record.root() is
+  // cached, so a record's substitutions array has stable identity and all
+  // callers within that record share a single computation. Entries are released
+  // by GC once the substitutions array is no longer referenced.
+  private _eventLayoutCache = new WeakMap<object, DataLayout>();
+  private _userLayoutCache = new WeakMap<object, DataLayout>();
 
   constructor(templateNode: TemplateNode) {
     this._templateNode = templateNode;
@@ -359,7 +368,18 @@ export class ActualTemplateNode {
    * Embedded BXML substitutions are parsed and expanded: their inner substitutions
    * are resolved to literal parts using the embedded substitution list.
    */
-  getEventDataLayout(substitutions: any[]): Array<{ name?: string | null; parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> }> {
+  getEventDataLayout(substitutions: any[]): DataLayout {
+    const key = substitutions && typeof substitutions === 'object' ? substitutions : null;
+    if (key) {
+      const hit = this._eventLayoutCache.get(key);
+      if (hit) return hit;
+    }
+    const result = this._computeEventDataLayout(substitutions);
+    if (key) this._eventLayoutCache.set(key, result);
+    return result;
+  }
+
+  private _computeEventDataLayout(substitutions: any[]): DataLayout {
     const entries: Array<{ name?: string | null; parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> }> = [];
 
     const root = this._rootElement;
@@ -523,7 +543,18 @@ export class ActualTemplateNode {
    * <UserData><RmEvent><Session>0</Session><StartTime>...</StartTime></RmEvent></UserData>
    * returns entries with names 'Session', 'StartTime'.
    */
-  getUserDataLayout(substitutions: any[]): Array<{ name?: string | null; parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> }> {
+  getUserDataLayout(substitutions: any[]): DataLayout {
+    const key = substitutions && typeof substitutions === 'object' ? substitutions : null;
+    if (key) {
+      const hit = this._userLayoutCache.get(key);
+      if (hit) return hit;
+    }
+    const result = this._computeUserDataLayout(substitutions);
+    if (key) this._userLayoutCache.set(key, result);
+    return result;
+  }
+
+  private _computeUserDataLayout(substitutions: any[]): DataLayout {
     const entries: Array<{ name?: string | null; parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> }> = [];
     const root = this._rootElement as any;
     if (!root) return entries;
