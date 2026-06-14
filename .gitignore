@@ -14,6 +14,18 @@ coverage/
 tmp/
 temp/
 
+# Stray compiled output in the core source tree (the build emits to dist/ only).
+# Hand-written declarations (e.g. src/types/external.d.ts) are re-included below.
+/index.js
+/index.d.ts
+/index.js.map
+/index.d.ts.map
+/src/**/*.js
+/src/**/*.js.map
+/src/**/*.d.ts
+/src/**/*.d.ts.map
+!/src/types/external.d.ts
+
 # macOS
 .DS_Store
 
