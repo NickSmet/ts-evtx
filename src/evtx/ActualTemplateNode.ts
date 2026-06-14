@@ -4,7 +4,7 @@ import { BXmlNode } from './BXmlNode.js';
 import { TemplateNode } from './TemplateNode.js';
 import { VariantType } from './enums.js';
 import { BXmlParser } from './BXmlParser';
-import { getLogger } from '../logging/logger.js';
+import { getLogger, ENABLE_DEBUG_LOGGING } from '../logging/logger.js';
 
 /**
  * Enhanced template node that provides complete template parsing and XML rendering capabilities
@@ -145,7 +145,7 @@ export class ActualTemplateNode {
       if (subId < substitutions.length) {
         const rawValue = substitutions[subId];
         const formattedString = this.formatValueForXml(rawValue, valueType);
-        this._log.debug(`🎨 Substitution ${subId}: type=0x${valueType?.toString(16)}, raw=${typeof rawValue}, formatted="${formattedString}"`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Substitution ${subId}: type=0x${valueType?.toString(16)}, raw=${typeof rawValue}, formatted="${formattedString}"`);
         
         // BXml substitutions already return valid XML markup, don't escape them
         if (valueType === VariantType.BXml) {

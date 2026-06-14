@@ -2,7 +2,7 @@ import { BinaryReader } from '../binary/BinaryReader';
 import { ChunkHeader } from './ChunkHeader';
 import { BXmlNode } from './BXmlNode';
 import { NodeFactory } from './node-factory';
-import { getLogger } from '../logging/logger.js';
+import { getLogger, ENABLE_DEBUG_LOGGING } from '../logging/logger.js';
 
 export class TemplateNode {
   private _offset: number;
@@ -27,10 +27,12 @@ export class TemplateNode {
     this._log.debug(`   📊 Reader file size: ${reader.size} bytes`);
     
     // Debug: Show raw bytes at this location
-    reader.seek(absoluteOffset);
-    const headerBytes = reader.readBuffer(Math.min(32, reader.size - absoluteOffset));
-    const hexDump = Array.from(headerBytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
-    this._log.debug(`   🔍 Raw bytes at offset: ${hexDump}`);
+    if (ENABLE_DEBUG_LOGGING) {
+      reader.seek(absoluteOffset);
+      const headerBytes = reader.readBuffer(Math.min(32, reader.size - absoluteOffset));
+      const hexDump = Array.from(headerBytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+      this._log.debug(`   🔍 Raw bytes at offset: ${hexDump}`);
+    }
     
     // Reset to start parsing
     reader.seek(absoluteOffset);

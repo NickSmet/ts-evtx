@@ -116,10 +116,12 @@ class RootNode extends BXmlNode {
     // This was discovered through surgical debugging comparing Python vs TypeScript behavior
     const substitutionDataOffset = rootNodeStartOffset + this._parsedBxmlChildrenLength - 1;
     
-    this._log.debug(`🔧 RootNode: Substitution offset calculation:`);
-    this._log.debug(`   RootNode starts at: 0x${rootNodeStartOffset.toString(16)}`);
-    this._log.debug(`   BXML children length: ${this._parsedBxmlChildrenLength} bytes`);
-    this._log.debug(`   Substitutions should start at: 0x${substitutionDataOffset.toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) {
+      this._log.debug(`🔧 RootNode: Substitution offset calculation:`);
+      this._log.debug(`   RootNode starts at: 0x${rootNodeStartOffset.toString(16)}`);
+      this._log.debug(`   BXML children length: ${this._parsedBxmlChildrenLength} bytes`);
+      this._log.debug(`   Substitutions should start at: 0x${substitutionDataOffset.toString(16)}`);
+    }
     
     r.seek(substitutionDataOffset);
     
@@ -133,18 +135,18 @@ class RootNode extends BXmlNode {
       const substitutionCountBE = r.u32be();
       r.seek(subCountPos + 4); // Move past the count for continuation
       
-      this._log.debug(`🔍 RootNode: At 0x${subCountPos.toString(16)}:`);
-      this._log.debug(`   substitution_count (LE): ${substitutionCountLE} (0x${substitutionCountLE.toString(16)})`);
-      this._log.debug(`   substitution_count (BE): ${substitutionCountBE} (0x${substitutionCountBE.toString(16)})`);
-      
       // Use the one that looks reasonable
       const substitutionCount = (substitutionCountBE > 0 && substitutionCountBE < 1024) ? substitutionCountBE : substitutionCountLE;
-      this._log.debug(`   Using: ${substitutionCount} (${substitutionCount === substitutionCountBE ? 'BE' : 'LE'})`);
-      
-      if (substitutionCount > 0 && substitutionCount < 1024) { // Sanity check count
-        this._log.debug(`✅ RootNode: Valid substitution count, proceeding to parse`);
-      } else {
-        this._log.debug(`❌ RootNode: Invalid substitution count, likely this is not substitution data`);
+      if (ENABLE_DEBUG_LOGGING) {
+        this._log.debug(`🔍 RootNode: At 0x${subCountPos.toString(16)}:`);
+        this._log.debug(`   substitution_count (LE): ${substitutionCountLE} (0x${substitutionCountLE.toString(16)})`);
+        this._log.debug(`   substitution_count (BE): ${substitutionCountBE} (0x${substitutionCountBE.toString(16)})`);
+        this._log.debug(`   Using: ${substitutionCount} (${substitutionCount === substitutionCountBE ? 'BE' : 'LE'})`);
+        if (substitutionCount > 0 && substitutionCount < 1024) {
+          this._log.debug(`✅ RootNode: Valid substitution count, proceeding to parse`);
+        } else {
+          this._log.debug(`❌ RootNode: Invalid substitution count, likely this is not substitution data`);
+        }
       }
       
       if (substitutionCount > 0 && substitutionCount < 1024) { // Sanity check count
@@ -171,11 +173,13 @@ class RootNode extends BXmlNode {
             const result = parser.parse(decl.type, decl.size);
             this.substitutions.push(result.value);
             this._substitutionsBlockLength += result.consumedBytes;
-            // Debug: Log substitution type without printing binary garbage
-            const valueDesc = typeof result.value === 'string' ? `"${result.value.substring(0, 50)}${result.value.length > 50 ? '...' : ''}"` : 
-                             (result.value instanceof Uint8Array || Array.isArray(result.value)) ? `[binary data, ${result.consumedBytes} bytes]` :
-                             result.value;
-            this._log.debug(`✅ Parsed substitution: type=0x${decl.type.toString(16)}, value=${valueDesc}, consumed=${result.consumedBytes} bytes`);
+            if (ENABLE_DEBUG_LOGGING) {
+              // Debug: Log substitution type without printing binary garbage
+              const valueDesc = typeof result.value === 'string' ? `"${result.value.substring(0, 50)}${result.value.length > 50 ? '...' : ''}"` : 
+                               (result.value instanceof Uint8Array || Array.isArray(result.value)) ? `[binary data, ${result.consumedBytes} bytes]` :
+                               result.value;
+              this._log.debug(`✅ Parsed substitution: type=0x${decl.type.toString(16)}, value=${valueDesc}, consumed=${result.consumedBytes} bytes`);
+            }
           } else {
             this._log.warn(`RootNode: Truncated substitution value for type ${decl.type}, size ${decl.size}.`);
             break;
