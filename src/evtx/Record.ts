@@ -87,6 +87,9 @@ class RootNode extends BXmlNode {
           hasTemplateInstance = true;
           this._templateInstance = node;
           if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎯 RootNode: Found TemplateInstanceNode!`);
+          // At the record root the substitution array follows the template
+          // instance directly; stop here so its count is not misread as a token.
+          break;
         }
 
         if (node.kind === 'UnimplementedNode') {
@@ -111,38 +114,25 @@ class RootNode extends BXmlNode {
 
     if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 RootNode Phase 2: Starting substitution parsing, hasTemplateInstance=${hasTemplateInstance}`);
     
-    // Use relative offset from the end of parsed children
-    const rootNodeStartOffset = recordDataOffset;
-    // CRITICAL FIX: Subtract 1 byte - the BXML children length calculation includes 1 extra byte
-    // This was discovered through surgical debugging comparing Python vs TypeScript behavior
-    const substitutionDataOffset = rootNodeStartOffset + this._parsedBxmlChildrenLength - 1;
-    
+    // After Phase 1, the reader sits exactly at the start of the substitution
+    // array: at the record root the substitution count immediately follows the
+    // template instance (there is no EndOfStream token between them). Phase 1
+    // stops right after the TemplateInstanceNode, so the reader position is the
+    // ground-truth offset and no child-length arithmetic (or off-by-one) is
+    // needed.
+    const substitutionDataOffset = r.tell();
     if (ENABLE_DEBUG_LOGGING) {
-      this._log.debug(`🔧 RootNode: Substitution offset calculation:`);
-      this._log.debug(`   RootNode starts at: 0x${rootNodeStartOffset.toString(16)}`);
-      this._log.debug(`   BXML children length: ${this._parsedBxmlChildrenLength} bytes`);
-      this._log.debug(`   Substitutions should start at: 0x${substitutionDataOffset.toString(16)}`);
+      this._log.debug(`🔧 RootNode: Substitutions start at 0x${substitutionDataOffset.toString(16)}`);
     }
-    
-    r.seek(substitutionDataOffset);
     
     // Check if there's data left that could be substitutions
     if (r.tell() + 4 <= r.size) { // Minimum 4 bytes for substitution_count
       const subCountPos = r.tell();
-      
-      // Try both little-endian and big-endian to see which gives reasonable value
-      const substitutionCountLE = r.u32le();
-      r.seek(subCountPos);
-      const substitutionCountBE = r.u32be();
-      r.seek(subCountPos + 4); // Move past the count for continuation
-      
-      // Use the one that looks reasonable
-      const substitutionCount = (substitutionCountBE > 0 && substitutionCountBE < 1024) ? substitutionCountBE : substitutionCountLE;
+
+      // The substitution count is a little-endian u32 in the EVTX format.
+      const substitutionCount = r.u32le();
       if (ENABLE_DEBUG_LOGGING) {
-        this._log.debug(`🔍 RootNode: At 0x${subCountPos.toString(16)}:`);
-        this._log.debug(`   substitution_count (LE): ${substitutionCountLE} (0x${substitutionCountLE.toString(16)})`);
-        this._log.debug(`   substitution_count (BE): ${substitutionCountBE} (0x${substitutionCountBE.toString(16)})`);
-        this._log.debug(`   Using: ${substitutionCount} (${substitutionCount === substitutionCountBE ? 'BE' : 'LE'})`);
+        this._log.debug(`🔍 RootNode: At 0x${subCountPos.toString(16)}: substitution_count=${substitutionCount} (0x${substitutionCount.toString(16)})`);
         if (substitutionCount > 0 && substitutionCount < 1024) {
           this._log.debug(`✅ RootNode: Valid substitution count, proceeding to parse`);
         } else {
