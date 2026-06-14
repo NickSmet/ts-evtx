@@ -101,11 +101,9 @@ export class OpenStartElementNode extends BXmlNode {
     
     if (this.string_offset > nodeChunkRelativeOffset) {
       NS_LOG.debug(`🔧 OpenStartElement: String offset > node offset, parsing inline string`);
-      const stringNode = chunk.addString(this.string_offset, this);
-      if (stringNode) {
-        _tag_length += stringNode.length;
-        NS_LOG.debug(`🔧 OpenStartElement: Added inline string, length=${stringNode.length}, new_tag_length=${_tag_length}`);
-      }
+      const inlineLen = chunk.getStringByteLength(this.string_offset);
+      _tag_length += inlineLen;
+      NS_LOG.debug(`🔧 OpenStartElement: Added inline string, length=${inlineLen}, new_tag_length=${_tag_length}`);
     }
     
     NS_LOG.debug(`🔧 OpenStartElement FINAL: tag_length=${_tag_length}, content_should_start_at=0x${(nodeStartPositionInStream + _tag_length).toString(16)}`);
@@ -229,38 +227,6 @@ export class OpenStartElementNode extends BXmlNode {
     // Return the tag length (header only), like Python's tag_length() method
     // This is what defines where the content starts, not the total content size
     return this._tag_length;
-  }
-}
-
-/**
- * A node that represents a string stored in the chunk's string table.
- * These are used for tag names, attribute names, etc.
- */
-export class NameStringNode extends BXmlNode {
-  get kind(): NodeKind { return 'NameStringNode'; }
-  public name_hash: number;
-  public next_string_offset: number;
-
-  constructor(
-    r: BinaryReader,
-    chunk: ChunkHeader,
-    parent: BXmlNode | null,
-  ) {
-    // We don't have a token for this, so we pass a placeholder.
-    // This node type is not created by the NodeFactory from a token.
-    super(r, chunk, parent, BXmlToken.Name);
-    this.next_string_offset = this.r.u32le(); // Store for chaining
-    this.name_hash = this.r.u16le();
-    this.data = this.r.wstring();
-  }
-
-  public get name(): string {
-    return this.data;
-  }
-
-  public get length(): number {
-    // 4 (next_offset) + 2 (hash) + 2 (string_length) + (string_length * 2) (UTF-16 string) + 2 (Python's "two bytes unaccounted for")
-    return 8 + this.data.length * 2 + 2;
   }
 }
 
@@ -401,13 +367,6 @@ export class AttributeNode extends BXmlNode {
       // So total = 8 + (string_length * 2) + 2 = 10 + (string_length * 2)
       this._name_string_length = 4 + 2 + 2 + (stringLength * 2) + 2; // next+hash+len+data+null
       NS_LOG.debug(`🔧🔧 AttributeNode: calculated inline string length=${this._name_string_length}`);
-      
-      // Add the inline string to chunk's string table like Python
-      try {
-        chunk.addString(this.string_offset, this);
-      } catch (error) {
-        // Ignore errors for now
-      }
     }
     
     // Calculate expected child position like Python

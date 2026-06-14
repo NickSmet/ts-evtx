@@ -14,7 +14,6 @@ export type NodeKind =
   | 'StartOfStreamNode'
   | 'EndOfStreamNode'
   | 'OpenStartElementNode'
-  | 'NameStringNode'
   | 'CloseStartElementNode'
   | 'CloseEmptyElementNode'
   | 'CloseElementNode'

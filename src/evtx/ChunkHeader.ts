@@ -1,7 +1,6 @@
 import { Block } from "./Block";
 import { BinaryReader, crc32Checksum } from "../binary/BinaryReader";
 import { Record, InvalidRecordException } from "./Record";
-import { NameStringNode } from './node-specialisations';
 import { TemplateNode } from './TemplateNode';
 import { ActualTemplateNode } from './ActualTemplateNode';
 import { getLogger } from '../logging/logger.js';
@@ -26,10 +25,8 @@ const OFF_STRING_TABLE = 0x80;
 const OFF_TEMPLATE_TABLE = 0x180;
 
 export class ChunkHeader extends Block {
-  // PERFORMANCE: Store strings directly instead of NameStringNode objects
+  // Chunk string table: chunk-relative offset -> decoded name string.
   private _stringCache: Map<number, string> | null = null;
-  // Legacy: Keep for compatibility with addString() API
-  private _strings: Map<number, NameStringNode> | null = null;
   private _templates: Map<number, TemplateNode> = new Map();
   private _actualTemplates: Map<number, ActualTemplateNode> = new Map();
   private _templatesPreloaded = false; // PERFORMANCE: Track if templates are pre-loaded
@@ -166,75 +163,27 @@ export class ChunkHeader extends Block {
   }
 
   /**
-   * Legacy: Parses and caches the string table as NameStringNode objects.
-   * Only used when addString() is called explicitly.
+   * Byte footprint of the name-string record stored at the given chunk-relative
+   * offset: next_offset(4) + hash(2) + length(2) + UTF-16 data(2*len) + null(2).
+   * Used to size inline-string tags without materialising NameStringNode objects.
    */
-  private _loadStrings(): void {
-    if (this._strings !== null) return;
-    
-    this._strings = new Map<number, NameStringNode>();
-    
-    // Ensure offset 0 string is loaded for common lookups
-    if (!this._strings.has(0)) {
-      try {
-        this.addString(0);
-      } catch (error) {
-        this._log.warn('Could not load string at offset 0:', error);
-      }
+  getStringByteLength(offset: number): number {
+    const cached = this.getString(offset);
+    if (cached !== null) {
+      return 10 + cached.length * 2;
     }
-    
-    // Parse the 64 string table entries at 0x80
-    for (let i = 0; i < 64; i++) {
-      let ofs = this.u32(OFF_STRING_TABLE + (i * 4));
-      while (ofs > 0 && ofs < this.nextRecordOffset()) {
-        // Skip if we've already loaded this string
-        if (this._strings.has(ofs)) {
-          break;
-        }
-        
-        const stringNode = this.addString(ofs);
-        
-        // Follow the chain to the next string
-        ofs = stringNode.next_string_offset;
-        
-        // Safety check to prevent infinite loops
-        if (ofs === 0 || this._strings.has(ofs)) {
-          break;
-        }
-      }
+    // Inline strings whose offset is not chained from the 64 string-table buckets
+    // are parsed directly for their length, without polluting the lookup cache.
+    const savedPos = this.r.tell();
+    try {
+      this.r.seek(this.offset + offset);
+      this.r.u32le(); // next_offset
+      this.r.u16le(); // hash
+      const len = this.r.wstring().length;
+      return 10 + len * 2;
+    } finally {
+      this.r.seek(savedPos);
     }
-  }
-
-  /**
-   * Get the chunk's string table
-   */
-  strings(): Map<number, NameStringNode> {
-    if (this._strings === null) {
-      this._loadStrings();
-    }
-    return this._strings!;
-  }
-
-  /**
-   * Add a string to the chunk's string table
-   */
-  addString(offset: number, parent?: BXmlNode): NameStringNode {
-    if (this._strings === null) {
-      this._loadStrings();
-    }
-
-    // IMPORTANT: Do not disturb the main reader position used for BXML parsing.
-    // Clone a reader over the full file bytes and parse the string from there.
-    const cloned = new BinaryReader(this.r.bytesAt(0, this.r.size));
-    cloned.seek(this.offset + offset);
-
-    const stringNode = new NameStringNode(
-      cloned,
-      this,
-      parent || null
-    );
-    this._strings!.set(offset, stringNode);
-    return stringNode;
   }
 
   /**
