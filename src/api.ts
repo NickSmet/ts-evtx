@@ -711,7 +711,7 @@ async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions 
       // Merge with XML-extracted info
       const xmlInfo = parseXmlContentDetailed(xml);
       info = { ...xmlInfo, ...info }; // Prefer fast-extracted fields if available
-    } catch {}
+    } catch (e) { _log.debug('XML fallback extraction failed', e); }
   }
 
   const dataBuild = buildDataSectionFromRecord(rec, includeDataItems);
@@ -734,12 +734,9 @@ async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions 
       const provNames: string[] = [];
       provNames.push(canonicalName);
       if (enableAliasLookup) {
-        // PERFORMANCE: Only render XML if alias lookup is needed
-        if (!xmlRendered) {
-          try { xml = rec.renderXml(); xmlRendered = true; } catch {}
-        }
-        const aliasAttr = (xml || '').match(/EventSourceName=\"([^\"]+)\"/);
-        const alias = aliasAttr?.[1] || canonicalName.replace(/^Microsoft-Windows-/, '');
+        // EventSourceName comes straight from the structured System/Provider node,
+        // so no XML render or regex is needed here.
+        const alias = (info.eventSourceName as string | undefined) || canonicalName.replace(/^Microsoft-Windows-/, '');
         if (alias && alias !== canonicalName) provNames.push(alias);
       }
 
@@ -757,7 +754,7 @@ async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions 
           const layoutAny = ed.length ? ed : ud;
           baselineArgs = actual.buildArgsFromLayout(layoutAny, subs);
         }
-      } catch {}
+      } catch (e) { _log.debug('baseline args computation failed', e); }
 
       // Gather candidates
       let chosenTemplate: string | undefined;
@@ -916,6 +913,10 @@ function extractBasicInfoFast(rec: any): any {
                     result.provider = result.provider || {};
                     result.provider.guid = String(val);
                   }
+                }
+                if ((attr as any).name === 'EventSourceName') {
+                  const val = extractValue(attr.children?.[0]);
+                  if (val != null) result.eventSourceName = String(val);
                 }
               }
             }
