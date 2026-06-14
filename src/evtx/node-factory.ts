@@ -1,6 +1,6 @@
 import { BinaryReader } from '../binary/BinaryReader';
 import { ChunkHeader } from './ChunkHeader';
-import { BXmlNode } from './BXmlNode';
+import { BXmlNode, type NodeKind } from './BXmlNode';
 import { BXmlToken } from './enums';
 import { getLogger } from '../logging/logger.js';
 import {
@@ -24,6 +24,7 @@ import {
 } from './node-specialisations';
 
 class UnimplementedNode extends BXmlNode {
+  get kind(): NodeKind { return 'UnimplementedNode'; }
   private _log = getLogger('NodeFactory');
   constructor(
     r: BinaryReader,

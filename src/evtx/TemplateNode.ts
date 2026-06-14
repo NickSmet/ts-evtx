@@ -119,7 +119,7 @@ export class TemplateNode {
           const endNode = factory.fromStream(dummyParent);
           if (endNode) {
             this._children.push(endNode);
-            this._log.debug(`✅ Parsed ${endNode.constructor.name}`);
+            this._log.debug(`✅ Parsed ${endNode.kind}`);
           }
         } catch (error) {
           this._log.warn(`❌ Error parsing EndOfStream: ${error}`);
@@ -138,12 +138,12 @@ export class TemplateNode {
         const childNode = factory.fromStream(dummyParent);
         if (childNode) {
           this._children.push(childNode);
-          this._log.debug(`✅ Parsed ${childNode.constructor.name}, length=${childNode.length}`);
+          this._log.debug(`✅ Parsed ${childNode.kind}, length=${childNode.length}`);
           
           // Show structure for key node types
-          if (childNode.constructor.name === 'OpenStartElementNode') {
+          if (childNode.kind === 'OpenStartElementNode') {
             this._log.debug(`   📝 OpenStartElement: name="${(childNode as any).name || 'unknown'}"`);
-          } else if (childNode.constructor.name === 'StartOfStreamNode') {
+          } else if (childNode.kind === 'StartOfStreamNode') {
             this._log.debug(`   🔄 StartOfStream marker`);
           }
         } else {
@@ -173,7 +173,7 @@ export class TemplateNode {
     const indent = '  '.repeat(depth);
     
     for (const node of nodes) {
-      const nodeName = node.constructor.name;
+      const nodeName = node.kind;
       
       if (nodeName === 'OpenStartElementNode') {
         const elementName = (node as any).name || 'unknown';
@@ -191,11 +191,6 @@ export class TemplateNode {
       } else if (nodeName === 'NormalSubstitutionNode') {
         const subId = (node as any).substitution_id || 0;
         lines.push(`${indent}  [SUBSTITUTION:${subId}]`);
-      } else if (nodeName === 'CompactSubstitutionNode') {
-        const subId = (node as any).substitution_id || 0;
-        lines.push(`${indent}  [SUBSTITUTION:${subId}]`);
-      } else if (nodeName === 'ValueNode') {
-        lines.push(`${indent}  [VALUE]`);
       } else {
         lines.push(`${indent}  <!-- ${nodeName} -->`);
       }

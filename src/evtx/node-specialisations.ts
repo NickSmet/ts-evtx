@@ -1,4 +1,4 @@
-import { BXmlNode } from './BXmlNode';
+import { BXmlNode, type NodeKind } from './BXmlNode';
 import { BXmlToken, VariantType } from './enums';
 import { ChunkHeader } from './ChunkHeader';
 import { BinaryReader } from '../binary/BinaryReader';
@@ -13,6 +13,7 @@ const NS_LOG = getLogger('NodeSpecialisations');
  * Token: 0x0f
  */
 export class StartOfStreamNode extends BXmlNode {
+  get kind(): NodeKind { return 'StartOfStreamNode'; }
   public unknownByteAfterToken: number; // Corresponds to python's unknown0
   public unknownWordAfterUnknownByte: number; // Corresponds to python's unknown1
 
@@ -41,6 +42,7 @@ export class StartOfStreamNode extends BXmlNode {
  * Token: 0x00
  */
 export class EndOfStreamNode extends BXmlNode {
+  get kind(): NodeKind { return 'EndOfStreamNode'; }
   constructor(
     r: BinaryReader,
     chunk: ChunkHeader,
@@ -60,6 +62,7 @@ export class EndOfStreamNode extends BXmlNode {
  * Token: 0x01
  */
 export class OpenStartElementNode extends BXmlNode {
+  get kind(): NodeKind { return 'OpenStartElementNode'; }
   public size: number; // This is the size of the element's content, attributes, and closing tags, *excluding* this token.
   public element_id: number; // Seems unused
   public string_offset: number;
@@ -174,7 +177,7 @@ export class OpenStartElementNode extends BXmlNode {
                     }
                     const childNode = this.factory.fromStream(this);
                     this.children.push(childNode);
-                    if (childNode.token === BXmlToken.EndOfStream || childNode.constructor.name === 'UnimplementedNode') {
+                    if (childNode.token === BXmlToken.EndOfStream || childNode.kind === 'UnimplementedNode') {
                          NS_LOG.warn(`Stopping child parsing in OpenStartElement due to ${BXmlToken[childNode.token] || 'UnimplementedNode'}`);
                          break;
                     }
@@ -234,6 +237,7 @@ export class OpenStartElementNode extends BXmlNode {
  * These are used for tag names, attribute names, etc.
  */
 export class NameStringNode extends BXmlNode {
+  get kind(): NodeKind { return 'NameStringNode'; }
   public name_hash: number;
   public next_string_offset: number;
 
@@ -261,6 +265,7 @@ export class NameStringNode extends BXmlNode {
 }
 
 export class CloseStartElementNode extends BXmlNode {
+  get kind(): NodeKind { return 'CloseStartElementNode'; }
   constructor(
     r: BinaryReader,
     chunk: ChunkHeader,
@@ -275,6 +280,7 @@ export class CloseStartElementNode extends BXmlNode {
 }
 
 export class CloseEmptyElementNode extends BXmlNode {
+  get kind(): NodeKind { return 'CloseEmptyElementNode'; }
   constructor(
     r: BinaryReader,
     chunk: ChunkHeader,
@@ -289,6 +295,7 @@ export class CloseEmptyElementNode extends BXmlNode {
 }
 
 export class CloseElementNode extends BXmlNode {
+  get kind(): NodeKind { return 'CloseElementNode'; }
   constructor(
     r: BinaryReader,
     chunk: ChunkHeader,
@@ -303,6 +310,7 @@ export class CloseElementNode extends BXmlNode {
 }
 
 export class ValueTextNode extends BXmlNode {
+  get kind(): NodeKind { return 'ValueTextNode'; }
   public value_type: number;
   private _valueLength: number = 0; // Length of the actual variant value data
   private _parsedValue: any = null;
@@ -344,6 +352,7 @@ export class ValueTextNode extends BXmlNode {
 }
 
 export class AttributeNode extends BXmlNode {
+  get kind(): NodeKind { return 'AttributeNode'; }
   private string_offset: number;
   private _name_string_length: number = 0; // Length of inline string data like Python
 
@@ -416,7 +425,7 @@ export class AttributeNode extends BXmlNode {
       try {
         const childNode = this.factory.fromStream(this);
         this.children.push(childNode);
-        NS_LOG.debug(`✅ AttributeNode: Successfully parsed child: ${childNode.constructor.name}`);
+        NS_LOG.debug(`✅ AttributeNode: Successfully parsed child: ${childNode.kind}`);
       } catch (error) {
         NS_LOG.error(`❌ AttributeNode: Failed to parse child:`, error);
       }
@@ -446,6 +455,7 @@ export class AttributeNode extends BXmlNode {
 }
 
 export class CDataSectionNode extends BXmlNode {
+  get kind(): NodeKind { return 'CDataSectionNode'; }
   private string_length: number;
 
   constructor(
@@ -474,6 +484,7 @@ export class CDataSectionNode extends BXmlNode {
 
 
 export class ProcessingInstructionTargetNode extends BXmlNode {
+  get kind(): NodeKind { return 'ProcessingInstructionTargetNode'; }
   constructor(
     r: BinaryReader,
     chunk: ChunkHeader,
@@ -490,6 +501,7 @@ export class ProcessingInstructionTargetNode extends BXmlNode {
 }
 
 export class ProcessingInstructionDataNode extends BXmlNode {
+  get kind(): NodeKind { return 'ProcessingInstructionDataNode'; }
   constructor(
     r: BinaryReader,
     chunk: ChunkHeader,
@@ -506,6 +518,7 @@ export class ProcessingInstructionDataNode extends BXmlNode {
 }
 
 export class TemplateInstanceNode extends BXmlNode {
+  get kind(): NodeKind { return 'TemplateInstanceNode'; }
   public unknownByteAfterToken: number; // python: unknown0
   public template_id: number;
   public template_offset: number; // Chunk-relative offset to the TemplateNode definition
@@ -620,6 +633,7 @@ export class TemplateInstanceNode extends BXmlNode {
 }
 
 export class FragmentHeaderNode extends BXmlNode {
+  get kind(): NodeKind { return 'FragmentHeaderNode'; }
   constructor(
     r: BinaryReader,
     chunk: ChunkHeader,
@@ -646,6 +660,7 @@ export class FragmentHeaderNode extends BXmlNode {
 }
 
 export class NormalSubstitutionNode extends BXmlNode {
+  get kind(): NodeKind { return 'NormalSubstitutionNode'; }
   public substitution_id: number;
   public value_type: number;
 
@@ -666,6 +681,7 @@ export class NormalSubstitutionNode extends BXmlNode {
 }
 
 export class OptionalSubstitutionNode extends BXmlNode {
+  get kind(): NodeKind { return 'OptionalSubstitutionNode'; }
   public substitution_id: number;
   public value_type: number;
 
@@ -686,6 +702,7 @@ export class OptionalSubstitutionNode extends BXmlNode {
 }
 
 export class CharacterReferenceNode extends BXmlNode {
+  get kind(): NodeKind { return 'CharacterReferenceNode'; }
   public entity: number;
 
   constructor(
@@ -709,6 +726,7 @@ export class CharacterReferenceNode extends BXmlNode {
 }
 
 export class EntityReferenceNode extends BXmlNode {
+  get kind(): NodeKind { return 'EntityReferenceNode'; }
   private string_offset: number;
   private _name_string_length: number = 0;
 

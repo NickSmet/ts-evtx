@@ -1,7 +1,7 @@
 import { Block } from "./Block";
 import { BinaryReader } from "../binary/BinaryReader";
 import { ChunkHeader } from "./ChunkHeader";
-import { BXmlNode } from "./BXmlNode";
+import { BXmlNode, type NodeKind } from "./BXmlNode";
 import { NodeFactory } from "./node-factory";
 import { BXmlToken } from "./enums";
 import { TemplateInstanceNode } from "./node-specialisations";
@@ -17,6 +17,7 @@ export class InvalidRecordException extends Error {
 
 // Root node with two-phase parsing approach (children, then substitutions)
 class RootNode extends BXmlNode {
+  get kind(): NodeKind { return 'RootNode'; }
   public substitutions: ParsedVariant[] = []; // Substitution values for template instances
   private _parsedBxmlChildrenLength: number = 0;
   private _substitutionsBlockLength: number = 0;
@@ -80,7 +81,7 @@ class RootNode extends BXmlNode {
         const node = this.factory.fromStream(this);
         this.children.push(node);
         this._parsedBxmlChildrenLength += node.length;
-        if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ RootNode: Added ${node.constructor.name}, length=${node.length}, total children: ${this.children.length}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ RootNode: Added ${node.kind}, length=${node.length}, total children: ${this.children.length}`);
 
         if (node instanceof TemplateInstanceNode) {
           hasTemplateInstance = true;
@@ -88,7 +89,7 @@ class RootNode extends BXmlNode {
           if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎯 RootNode: Found TemplateInstanceNode!`);
         }
 
-        if (node.constructor.name === 'UnimplementedNode') {
+        if (node.kind === 'UnimplementedNode') {
           this._log.warn(`Got unimplemented node at ${r.tell()}, stopping parsing to prevent issues`);
           break;
         }

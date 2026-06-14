@@ -4,6 +4,34 @@ import { BXmlToken } from './enums';
 import { NodeFactory } from './node-factory';
 
 /**
+ * Stable structural discriminant for every node type. Used instead of
+ * `constructor.name`, which is unreliable under bundler/minifier renaming.
+ * The string values intentionally match the class names so behaviour (and any
+ * debug output) is unchanged.
+ */
+export type NodeKind =
+  | 'RootNode'
+  | 'StartOfStreamNode'
+  | 'EndOfStreamNode'
+  | 'OpenStartElementNode'
+  | 'NameStringNode'
+  | 'CloseStartElementNode'
+  | 'CloseEmptyElementNode'
+  | 'CloseElementNode'
+  | 'ValueTextNode'
+  | 'AttributeNode'
+  | 'CDataSectionNode'
+  | 'ProcessingInstructionTargetNode'
+  | 'ProcessingInstructionDataNode'
+  | 'TemplateInstanceNode'
+  | 'FragmentHeaderNode'
+  | 'NormalSubstitutionNode'
+  | 'OptionalSubstitutionNode'
+  | 'CharacterReferenceNode'
+  | 'EntityReferenceNode'
+  | 'UnimplementedNode';
+
+/**
  * The base class for all Binary XML node types.
  * It provides the core structure and properties that all nodes share.
  */
@@ -15,6 +43,9 @@ export abstract class BXmlNode {
   public children: BXmlNode[] = [];
   public data: any;
   public factory: NodeFactory;
+
+  /** Stable node-type discriminant (replaces fragile constructor.name checks). */
+  public abstract readonly kind: NodeKind;
 
   constructor(
     r: BinaryReader,
@@ -47,6 +78,6 @@ export abstract class BXmlNode {
   public toString(): string {
     const tokenName =
       BXmlToken[this.token] || `UnknownToken(0x${this.token.toString(16)})`;
-    return `${this.constructor.name}(${tokenName})`;
+    return `${this.kind}(${tokenName})`;
   }
 }

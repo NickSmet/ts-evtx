@@ -51,7 +51,7 @@ export class ActualTemplateNode {
   private findRootElement(): BXmlNode | null {
     // Find the first OpenStartElementNode which will be our root element
     for (const node of this._templateNode.children) {
-      if (node.constructor.name === 'OpenStartElementNode') {
+      if (node.kind === 'OpenStartElementNode') {
         this._log.debug(`🎯 Root element found: ${(node as any).name || 'unknown'}`);
         return node;
       }
@@ -83,7 +83,7 @@ export class ActualTemplateNode {
   }
 
   private renderNode(node: BXmlNode, substitutions: any[], depth: number): string {
-    const nodeName = node.constructor.name;
+    const nodeName = node.kind;
     
     if (nodeName === 'OpenStartElementNode') {
       const element = node as any;
@@ -95,7 +95,7 @@ export class ActualTemplateNode {
       const attributes: string[] = [];
       if (element.children && element.children.length > 0) {
         for (const child of element.children) {
-          if (child.constructor.name === 'AttributeNode') {
+          if (child.kind === 'AttributeNode') {
             const attrNode = child as any;
             const attrName = attrNode.name || 'unknown';
             
@@ -103,9 +103,8 @@ export class ActualTemplateNode {
             let attrValue = '';
             if (attrNode.children && attrNode.children.length > 0) {
               const valueNode = attrNode.children[0];
-              if (valueNode.constructor.name === 'NormalSubstitutionNode' || 
-                  valueNode.constructor.name === 'CompactSubstitutionNode' ||
-                  valueNode.constructor.name === 'OptionalSubstitutionNode') {
+              if (valueNode.kind === 'NormalSubstitutionNode' ||
+                  valueNode.kind === 'OptionalSubstitutionNode') {
                 const subId = (valueNode as any).substitution_id;
                 const valueType = (valueNode as any).value_type;
                 if (subId < substitutions.length) {
@@ -114,7 +113,7 @@ export class ActualTemplateNode {
                 } else {
                   attrValue = `[SUBSTITUTION:${subId}]`;
                 }
-              } else if (valueNode.constructor.name === 'ValueTextNode') {
+              } else if (valueNode.kind === 'ValueTextNode') {
                 attrValue = String((valueNode as any).data || '');
               } else {
                 attrValue = this.renderNode(valueNode, substitutions, 0);
@@ -151,8 +150,7 @@ export class ActualTemplateNode {
       }
     }
     
-    if (nodeName === 'NormalSubstitutionNode' || 
-        nodeName === 'CompactSubstitutionNode' ||
+    if (nodeName === 'NormalSubstitutionNode' ||
         nodeName === 'OptionalSubstitutionNode') {
       const subNode = node as any;
       const subId = subNode.substitution_id;
@@ -336,7 +334,7 @@ export class ActualTemplateNode {
     
     for (let i = 0; i < this.allNodes.length; i++) {
       const node = this.allNodes[i];
-      const nodeName = node.constructor.name;
+      const nodeName = node.kind;
       
       if (nodeName === 'OpenStartElementNode') {
         const elementName = (node as any).name || 'unknown';
@@ -344,9 +342,6 @@ export class ActualTemplateNode {
       } else if (nodeName === 'NormalSubstitutionNode') {
         const subId = (node as any).substitution_id || 0;
         lines.push(`  ${i}: [SUBSTITUTION:${subId}]`);
-      } else if (nodeName === 'CompactSubstitutionNode') {
-        const subId = (node as any).substitution_id || 0;
-        lines.push(`  ${i}: [COMPACT_SUBSTITUTION:${subId}]`);
       } else if (nodeName === 'AttributeNode') {
         const attrName = (node as any).attribute_name || 'unknown';
         lines.push(`  ${i}: @${attrName}`);

@@ -77,13 +77,13 @@ export class BXmlParser {
         const node = factory.fromStream({ chunk, __embedded: true, factory } as any);
         const after = reader.tell();
         const logical = (node as any).length || 0;
-        if (node.constructor.name !== 'EndOfStreamNode') declared += logical;
+        if (node.kind !== 'EndOfStreamNode') declared += logical;
         nodes.push(node);
-        if (node.constructor.name === 'TemplateInstanceNode') templateInstance = node;
+        if (node.kind === 'TemplateInstanceNode') templateInstance = node;
         // In embedded BXML, the substitution header immediately follows the TemplateInstance bytes.
         // Do not attempt to parse further tokens (e.g., misinterpreting count as CloseElement).
-        if (node.constructor.name === 'TemplateInstanceNode') break;
-        if (node.constructor.name === 'EndOfStreamNode') break;
+        if (node.kind === 'TemplateInstanceNode') break;
+        if (node.kind === 'EndOfStreamNode') break;
         if (after <= before) break; // avoid infinite loop
       } catch { break; }
     }
@@ -162,9 +162,9 @@ export class BXmlParser {
         const after = reader.tell();
         const consumed = Math.max(0, after - before);
         childrenConsumed += consumed;
-        trace.nodes.push({ name: node.constructor.name, before, after, consumed, logicalLen: (node as any).length || null });
-        if (node.constructor.name === 'TemplateInstanceNode') templateInstance = node;
-        if (node.constructor.name === 'EndOfStreamNode') break;
+        trace.nodes.push({ name: node.kind, before, after, consumed, logicalLen: (node as any).length || null });
+        if (node.kind === 'TemplateInstanceNode') templateInstance = node;
+        if (node.kind === 'EndOfStreamNode') break;
       } catch { break; }
     }
 
@@ -231,12 +231,12 @@ export class BXmlParser {
           const node = factory.fromStream({ chunk, __embedded: true, factory } as any);
           const after = reader.tell();
           const logical = (node as any).length || 0;
-          if (node.constructor.name !== 'EndOfStreamNode') declared += logical;
-          trace.nodes.push({ name: node.constructor.name, before, after, logical });
-          if (node.constructor.name === 'TemplateInstanceNode') templateInstance = node;
+          if (node.kind !== 'EndOfStreamNode') declared += logical;
+          trace.nodes.push({ name: node.kind, before, after, logical });
+          if (node.kind === 'TemplateInstanceNode') templateInstance = node;
           // Stop after TemplateInstance to avoid treating substitution header bytes as tokens
-          if (node.constructor.name === 'TemplateInstanceNode') break;
-          if (node.constructor.name === 'EndOfStreamNode') break;
+          if (node.kind === 'TemplateInstanceNode') break;
+          if (node.kind === 'EndOfStreamNode') break;
           if (after <= before) break;
         } catch {
           break;
@@ -302,17 +302,17 @@ export class BXmlParser {
           childrenConsumed += consumed;
           const logical = (node as any).length || 0;
           // Exclude EndOfStream from declared length like python RootNode.children end_tokens
-          if (node.constructor.name !== 'EndOfStreamNode') childrenDeclared += logical;
-          this._log.debug(`🔍 Parsed embedded node: ${node.constructor.name} (consumed=${consumed}, logicalLen=${logical})`);
+          if (node.kind !== 'EndOfStreamNode') childrenDeclared += logical;
+          this._log.debug(`🔍 Parsed embedded node: ${node.kind} (consumed=${consumed}, logicalLen=${logical})`);
           
           // Look for TemplateInstanceNode
-          if (node.constructor.name === 'TemplateInstanceNode') {
+          if (node.kind === 'TemplateInstanceNode') {
             templateInstance = node;
             this._log.debug(`🏠 Found TemplateInstanceNode in embedded BXML`);
           }
           
           // Stop at EndOfStream
-          if (node.constructor.name === 'EndOfStreamNode') {
+          if (node.kind === 'EndOfStreamNode') {
             this._log.debug(`🏁 Hit EndOfStream in embedded BXML`);
             // Do not include EndOfStream in children length (mirror top-level RootNode)
             break;
