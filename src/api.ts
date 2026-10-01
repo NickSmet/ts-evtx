@@ -131,8 +131,28 @@ function parseXmlContentDetailed(xml: string) {
 
 // (removed old simple extractInsertionArgs; see extended version below)
 
+/** Windows insertions are %1..%99; anything above cannot be an insertion number. */
+const MAX_INSERTION_INDEX = 99;
+
+/**
+ * Highest insertion number (%1..%99) a template refers to, 0 if none.
+ *
+ * Numbers above 99 are ignored on purpose. A catalog template can contain `%%100790273`, a parameter-message
+ * reference (e.g. "failed with error code '%4'%%100790273"), and reading that as insertion 100790273 made the
+ * callers pad the argument list with `Array(100790273).fill('')`: a 1 MB file exhausted a 4 GB heap.
+ */
+export function templatePlaceholderMax(tpl: string): number {
+  let max = 0;
+  for (const m of tpl.matchAll(/%(\d+)/g)) {
+    const n = parseInt(m[1], 10);
+    if (n <= MAX_INSERTION_INDEX && n > max) max = n;
+  }
+  return max;
+}
+
 function applyMessageTemplate(template: string, args: string[]): string {
-  let s = template;
+  // Parameter-message references (%%100790273) are not insertions and cannot be resolved here: drop them.
+  let s = template.replace(/%%\d{3,}/g, '');
   // Handle FormatMessage-style with format modifiers: %1!S!, %2!s!, etc.
   s = s.replace(/%(\d+)!([^!]*)!/g, (_, n) => {
     const i = parseInt(n, 10) - 1; return args[i] ?? '';
@@ -241,8 +261,7 @@ function buildArgsFromSubstitutions(rec: any, template: string, xml?: string): s
     const subs = root.substitutions.map((x: any) => formatVariantForMessage(x)).filter((s: any) => typeof s === 'string');
 
     // Determine expected placeholder count from template
-    let maxIdx = 0; const re = /%(\d+)/g; let m;
-    while ((m = re.exec(template)) !== null) { const n = parseInt(m[1], 10); if (n > maxIdx) maxIdx = n; }
+    const maxIdx = templatePlaceholderMax(template);
     if (maxIdx <= 0) return [];
 
     // If XML present, use EventData text to locate the right subset in order
@@ -288,8 +307,7 @@ function buildArgsFromTemplate(rec: any, template: string): string[] | null {
     const actual = root.chunk?.getActualTemplate?.(ti.template_offset);
     if (!actual) return null;
     // Determine how many placeholders are needed
-    let maxIdx = 0; const re = /%(\d+)/g; let m;
-    while ((m = re.exec(template)) !== null) { const n = parseInt(m[1], 10); if (n > maxIdx) maxIdx = n; }
+    const maxIdx = templatePlaceholderMax(template);
     const subs = root.substitutions || [];
     const layout = actual.getEventDataLayout(subs);
     const userLayout = (layout.length === 0 && typeof actual.getUserDataLayout === 'function') ? (actual as any).getUserDataLayout(subs) : [];
@@ -440,7 +458,7 @@ export async function* readEvents(filePath: string, options: EventReadOptions = 
 
         if (allTemplates.length) {
           // First, prefer templates whose placeholder count equals the number of EventData fields (layout entries)
-          const placeholderMax = (tpl: string) => { let max=0; const re=/%(\d+)/g; let m; while((m=re.exec(tpl))!==null){const n=parseInt(m[1],10); if(n>max) max=n;} return max; };
+          const placeholderMax = templatePlaceholderMax;
           const rootAny: any = rec?.root?.();
           const ti = rootAny?.templateInstance?.();
           const actual = rootAny?.chunk?.getActualTemplate?.(ti?.template_offset);
@@ -678,10 +696,7 @@ export async function getRecord(filePath: string, recordNumber: number): Promise
 
 // New resolved API: helpers and streaming
 
-function placeholderMax(tpl: string): number {
-  let max = 0; const re = /%(\d+)/g; let m; while ((m = re.exec(tpl)) !== null) { const n = parseInt(m[1], 10); if (n > max) max = n; }
-  return max;
-}
+const placeholderMax = templatePlaceholderMax;
 
 async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions = {}): Promise<ResolvedEvent> {
   const {
