@@ -72,7 +72,7 @@ export class SqliteMessageProvider implements MessageProvider {
       if (this.schema.hasLanguage) {
         this.getStmtVelocidex = this.db.prepare(
           `SELECT ${selectCol} as msg FROM messages
-           WHERE provider_name = ? AND event_id = ? AND (language = ? OR ? IS NULL)
+           WHERE provider_name = ? AND event_id = ? AND (language = ? OR language IS NULL)
            ORDER BY CASE WHEN language = ? THEN 0 ELSE 1 END LIMIT 1`
         );
         this.getAllByProviderNameStmt = this.db.prepare(
@@ -98,7 +98,7 @@ export class SqliteMessageProvider implements MessageProvider {
     if (this.schema.hasLanguage) {
       this.getMsgByIdWithLangStmt = this.db.prepare(
         `SELECT message FROM messages
-         WHERE provider_id = ? AND event_id = ? AND (language = ? OR ? IS NULL)
+         WHERE provider_id = ? AND event_id = ? AND (language = ? OR language IS NULL)
          ORDER BY CASE WHEN language = ? THEN 0 ELSE 1 END LIMIT 1`
       );
       this.getAllByProviderIdStmt = this.db.prepare(
@@ -179,7 +179,7 @@ export class SqliteMessageProvider implements MessageProvider {
     let val: string | null = null;
     if (this.schema.kind === 'single-table') {
       if (this.schema.hasLanguage) {
-        const row = this.getStmtVelocidex!.get(provider, eventId, locale, locale, locale) as any;
+        const row = this.getStmtVelocidex!.get(provider, eventId, locale, locale) as any;
         val = row?.msg ?? null;
       } else {
         const row = this.getStmtVelocidex!.get(provider, eventId) as any;
@@ -189,7 +189,7 @@ export class SqliteMessageProvider implements MessageProvider {
       const pid = this.providerId(provider);
       if (pid == null) { this.remember(cacheKey, null); return null; }
       if (this.schema.hasLanguage) {
-        const row = this.getMsgByIdWithLangStmt!.get(pid, eventId, locale, locale, locale) as any;
+        const row = this.getMsgByIdWithLangStmt!.get(pid, eventId, locale, locale) as any;
         val = row?.message ?? null;
       } else {
         const row = this.getMsgByIdStmt!.get(pid, eventId) as any;

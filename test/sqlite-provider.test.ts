@@ -102,4 +102,37 @@ describe.each(schemas)('SqliteMessageProvider (%s schema)', (_name, makeDb) => {
       expect(Object.isFrozen(a)).toBe(true);
     });
   });
+
+  // The shipped catalog (merged-messages.db) has `language = NULL` on every row, while callers default
+  // to locale 'en-US'. `language = ? OR ? IS NULL` can never match such rows, so getMessage() returned
+  // null for every event unless the whole catalog had been preloaded.
+  describe('rows without a language', () => {
+    it('are found when a locale is requested explicitly', async () => {
+      const p = new SqliteMessageProvider(makeDb([{ provider: 'Prov', eventId: 4624, message: 'logon', language: null }]));
+      expect(await p.getMessage('Prov', 4624, 'en-US')).toBe('logon');
+    });
+
+    it('are found when no locale is requested (the default)', async () => {
+      const p = new SqliteMessageProvider(makeDb([{ provider: 'Prov', eventId: 4624, message: 'logon', language: null }]));
+      expect(await p.getMessage('Prov', 4624)).toBe('logon');
+    });
+
+    it('agree with the preloaded catalog', async () => {
+      const file = makeDb([{ provider: 'Prov', eventId: 4624, message: 'logon', language: null }]);
+      const lazy = new SqliteMessageProvider(file);
+      const eager = new SqliteMessageProvider(file, { preload: true });
+      expect(await lazy.getMessage('Prov', 4624)).toBe(await eager.getMessage('Prov', 4624));
+    });
+
+    it('still lose to an exact locale match', async () => {
+      const p = new SqliteMessageProvider(makeDb([
+        { provider: 'Prov', eventId: 1, message: 'neutral', language: null },
+        { provider: 'Prov', eventId: 1, message: 'american', language: 'en-US' },
+        { provider: 'Prov', eventId: 1, message: 'deutsch', language: 'de-DE' },
+      ]));
+      expect(await p.getMessage('Prov', 1, 'en-US')).toBe('american');
+      expect(await p.getMessage('Prov', 1, 'de-DE')).toBe('deutsch');
+      expect(await p.getMessage('Prov', 1, 'fr-FR')).toBe('neutral'); // unknown locale falls back to language-neutral
+    });
+  });
 });
