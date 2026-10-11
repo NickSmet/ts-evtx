@@ -127,7 +127,7 @@ class EvtxQueryImpl implements EvtxQuery {
       try {
         const mod: any = await import('@ts-evtx/messages');
         // SqliteMessageProvider will throw if the DB cannot be opened
-        return new mod.SmartManagedMessageProvider({ customDbPath: dbPath, preload: true });
+        return new mod.SmartManagedMessageProvider({ customDbPath: dbPath });
       } catch (e: any) {
         throw new Error(`Failed to initialize message provider from path: ${dbPath}. ${e?.message || e}`);
       }
@@ -135,7 +135,7 @@ class EvtxQueryImpl implements EvtxQuery {
     // Auto (implicit): use packaged universal DB
     try {
       const mod: any = await import('@ts-evtx/messages');
-      return new mod.SmartManagedMessageProvider({ preload: true });
+      return new mod.SmartManagedMessageProvider({});
     } catch (e: any) {
       throw new Error(`Failed to initialize built-in message provider: ${e?.message || e}`);
     }
