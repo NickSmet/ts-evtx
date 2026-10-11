@@ -1,4 +1,5 @@
 import { Block } from "./Block";
+import { UTF8_DECODER } from '../binary/text';
 import { BinaryReader, crc32Checksum } from "../binary/BinaryReader";
 import { Record, InvalidRecordException } from "./Record";
 import { TemplateNode } from './TemplateNode';
@@ -39,7 +40,7 @@ export class ChunkHeader extends Block {
   /* Field accessors ----------------------------------------------------------- */
   magic(): string {
     const bytes = this.bytes(OFF_MAGIC, 8);
-    return new TextDecoder('utf-8').decode(bytes);
+    return UTF8_DECODER.decode(bytes);
   }
 
   fileFirstRecordNumber(): bigint {

@@ -1,4 +1,5 @@
 import { BinaryReader } from "../binary/BinaryReader";
+import { UTF16LE_DECODER, UTF8_DECODER, trimTrailingNuls } from '../binary/text';
 
 export abstract class Block {
   constructor(protected readonly r: BinaryReader, public readonly offset: number) {}
@@ -69,7 +70,7 @@ export abstract class Block {
 
   string8(offset: number, length: number): string {
     const bytes = this.bytes(offset, length);
-    return new TextDecoder('utf-8').decode(bytes);
+    return UTF8_DECODER.decode(bytes);
   }
 
   /**
@@ -80,8 +81,8 @@ export abstract class Block {
   wstring(offset: number, length: number): string {
     const bytes = this.bytes(offset, length * 2);
     // Use TextDecoder for robust UTF-16 LE decoding
-    const decoded = new TextDecoder('utf-16le').decode(bytes);
+    const decoded = UTF16LE_DECODER.decode(bytes);
     // Trim any trailing null characters
-    return decoded.replace(/\0+$/, '');
+    return trimTrailingNuls(decoded);
   }
 }

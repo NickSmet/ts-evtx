@@ -1,4 +1,5 @@
 import { VariantType } from "./enums";
+import { UTF16LE_DECODER, trimTrailingNuls } from '../binary/text';
 import { BinaryReader } from "../binary/BinaryReader";
 import { ChunkHeader } from "./ChunkHeader";
 import { BXmlNode } from "./BXmlNode";
@@ -23,7 +24,7 @@ export class WStringValue implements VariantValue {
       // Read exactly declaredLength bytes as UTF-16
       this.valueLength = declaredLength;
       const bytes = r.readBuffer(declaredLength);
-      this.value = new TextDecoder('utf-16le').decode(bytes).replace(/\0+$/, '');
+      this.value = trimTrailingNuls(UTF16LE_DECODER.decode(bytes));
     } else {
       // Read length-prefixed string
       const strLen = r.u16le();

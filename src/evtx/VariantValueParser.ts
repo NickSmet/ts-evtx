@@ -1,4 +1,5 @@
 import { BinaryReader } from '../binary/BinaryReader';
+import { UTF16LE_DECODER, UTF8_DECODER, trimTrailingNuls } from '../binary/text';
 import { VariantType } from './enums';
 import { getLogger } from '../logging/logger.js';
 
@@ -244,7 +245,7 @@ export class VariantValueParser {
     this.r.seek(this.r.tell() + length * 2);
     
     // Convert UTF-16LE to string
-    return new TextDecoder('utf-16le').decode(bytes);
+    return UTF16LE_DECODER.decode(bytes);
   }
 
   private parseWStringWithLength(declaredLength: number): string {
@@ -257,7 +258,7 @@ export class VariantValueParser {
     this.r.seek(this.r.tell() + declaredLength);
     
     // Convert UTF-16LE to string and remove null terminators
-    return new TextDecoder('utf-16le').decode(bytes).replace(/\0+$/, '');
+    return trimTrailingNuls(UTF16LE_DECODER.decode(bytes));
   }
 
   private parseString(): string {
@@ -272,7 +273,7 @@ export class VariantValueParser {
     this.r.seek(this.r.tell() + length);
     
     // Convert to string using UTF-8 (or could use windows-1252 for true ANSI)
-    return new TextDecoder('utf-8').decode(bytes);
+    return UTF8_DECODER.decode(bytes);
   }
 
   private parseStringWithLength(declaredLength: number): string {
@@ -285,7 +286,7 @@ export class VariantValueParser {
     this.r.seek(this.r.tell() + declaredLength);
     
     // Convert to string and remove null terminators
-    return new TextDecoder('utf-8').decode(bytes).replace(/\0+$/, '');
+    return trimTrailingNuls(UTF8_DECODER.decode(bytes));
   }
 
   private parseBinary(): Uint8Array {
@@ -407,9 +408,9 @@ export class VariantValueParser {
     this.r.seek(this.r.tell() + declaredLength);
 
     // Decode as UTF-16LE and split on NUL terminators, preserving empty entries
-    const decoded = new TextDecoder('utf-16le').decode(bytes);
+    const decoded = UTF16LE_DECODER.decode(bytes);
     // Remove any trailing NULs before splitting to avoid a spurious empty at the end
-    const trimmed = decoded.replace(/\u0000+$/g, '');
+    const trimmed = trimTrailingNuls(decoded);
     const parts = trimmed.split('\u0000');
     return parts;
   }

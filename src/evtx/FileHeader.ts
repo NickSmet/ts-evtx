@@ -1,4 +1,5 @@
 import { Block } from "./Block";
+import { UTF8_DECODER } from '../binary/text';
 import { BinaryReader, crc32Checksum } from "../binary/BinaryReader";
 import { ChunkHeader } from "./ChunkHeader";
 
@@ -24,7 +25,7 @@ export class FileHeader extends Block {
   /* Field accessors ----------------------------------------------------------- */
   magic(): string {
     const bytes = this.bytes(OFF_MAGIC, 8);
-    return new TextDecoder('utf-8').decode(bytes);
+    return UTF8_DECODER.decode(bytes);
   }
 
   oldestChunk(): bigint {
