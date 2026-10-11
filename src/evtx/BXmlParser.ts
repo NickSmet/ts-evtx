@@ -452,7 +452,7 @@ export class BXmlParser {
         substitutions.push(value);
         
         if (value !== null) {
-          if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ Parsed embedded substitution ${i}: type=0x${type.toString(16)}, size=${size}, value=${JSON.stringify(value)}`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ Parsed embedded substitution ${i}: type=0x${type.toString(16)}, size=${size}, value=${JSON.stringify(value, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}`);
         } else {
           this._log.warn(`❌ Failed to parse embedded substitution ${i}: type=0x${type.toString(16)}, size=${size}`);
         }

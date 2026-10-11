@@ -379,7 +379,7 @@ export class AttributeNode extends BXmlNode {
     
     // Fix: Use Python's approach - explicitly seek to the calculated child position
     r.seek(expectedChildPosition);
-    if (ENABLE_DEBUG_LOGGING) NS_LOG.debug(`🔧 AttributeNode: Positioned reader to expected child position 0x${expectedChildPosition.toString(16)}, next token=0x${r.peek()?.toString(16) || 'EOF'}`);
+    if (ENABLE_DEBUG_LOGGING) NS_LOG.debug(`🔧 AttributeNode: Positioned reader to expected child position 0x${expectedChildPosition.toString(16)}, next token=${r.tell() < r.size ? `0x${r.peek().toString(16)}` : 'EOF'}`);
     
     if (r.tell() < r.size) {
       try {

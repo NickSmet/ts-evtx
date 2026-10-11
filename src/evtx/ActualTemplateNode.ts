@@ -39,6 +39,10 @@ function indentLines(text: string, indent: string): string {
   return out;
 }
 
+// The control characters XML_ESCAPE_RE strips from rendered XML. Fields read straight from the
+// substitutions must not carry them either, or they would differ from the XML of the same record.
+const XML_INVALID_CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g;
+
 const HEX_UPPER: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0').toUpperCase());
 
 function escapeXmlChar(ch: string): string {
@@ -140,12 +144,14 @@ export class ActualTemplateNode {
   /** Text a value/substitution node would render as in the XML (null = absent/empty). */
   private nodeText(node: any, subs: any[]): string | null {
     if (!node) return null;
-    if (node.kind === 'ValueTextNode') return node.data == null ? null : String(node.data);
+    if (node.kind === 'ValueTextNode') return node.data == null ? null : String(node.data).replace(XML_INVALID_CONTROL_RE, '');
     const id = node.substitution_id;
     if (id == null || id < 0 || id >= subs.length) return null;
     const raw = subs[id];
     if (raw === null || raw === undefined) return null;
-    return this.formatValueForXml(raw, node.value_type);
+    const text = this.formatValueForXml(raw, node.value_type);
+    // Numbers cannot contain control characters; skip the scan for them.
+    return typeof raw === 'number' || typeof raw === 'bigint' ? text : text.replace(XML_INVALID_CONTROL_RE, '');
   }
 
   /**

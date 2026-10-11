@@ -251,6 +251,9 @@ export class ChunkHeader extends Block {
    * PERFORMANCE: Now pre-loads all templates on first access
    */
   getTemplate(offset: number): TemplateNode | null {
+    // A record without a template instance has no offset to look up; never parse one from a non-offset.
+    if (!Number.isFinite(offset)) return null;
+
     // PERFORMANCE: Pre-load templates on first access
     if (!this._templatesPreloaded) {
       this._preloadTemplates();
@@ -301,6 +304,8 @@ export class ChunkHeader extends Block {
    * PERFORMANCE: Benefits from template pre-loading
    */
   getActualTemplate(offset: number): ActualTemplateNode | null {
+    if (!Number.isFinite(offset)) return null;
+
     // PERFORMANCE: Pre-load templates on first access (also preloads ActualTemplateNode)
     if (!this._templatesPreloaded) {
       this._preloadTemplates();
