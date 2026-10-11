@@ -39,6 +39,25 @@ export class ActualTemplateNode {
   // by GC once the substitutions array is no longer referenced.
   private _eventLayoutCache = new WeakMap<object, DataLayout>();
   private _userLayoutCache = new WeakMap<object, DataLayout>();
+  // undefined = not probed yet; null = layout depends on substitution values; else the shared static layout.
+  private _staticEventLayout: DataLayout | null | undefined;
+  private _staticUserLayout: DataLayout | null | undefined;
+
+  /**
+   * Run a layout computation against a probe array that records whether the
+   * computation ever reads a substitution. If it does not, the result is a pure
+   * function of the template and can be shared by every record using it.
+   */
+  private probeStatic(compute: (subs: any[]) => DataLayout): DataLayout | null {
+    let touched = false;
+    const probe = new Proxy([] as any[], {
+      get(t, p, r) { touched = true; return Reflect.get(t, p, r); },
+      has(t, p) { touched = true; return Reflect.has(t, p); },
+    });
+    let out: DataLayout;
+    try { out = compute(probe); } catch { return null; }
+    return touched ? null : out;
+  }
 
   constructor(templateNode: TemplateNode) {
     this._templateNode = templateNode;
@@ -369,6 +388,12 @@ export class ActualTemplateNode {
    * are resolved to literal parts using the embedded substitution list.
    */
   getEventDataLayout(substitutions: any[]): DataLayout {
+    // Most templates' layouts depend only on the template (no embedded-BXML substitutions):
+    // compute once per template instead of re-walking the node tree for every record.
+    if (this._staticEventLayout === undefined) {
+      this._staticEventLayout = this.probeStatic((subs) => this._computeEventDataLayout(subs));
+    }
+    if (this._staticEventLayout) return this._staticEventLayout;
     const key = substitutions && typeof substitutions === 'object' ? substitutions : null;
     if (key) {
       const hit = this._eventLayoutCache.get(key);
@@ -465,7 +490,7 @@ export class ActualTemplateNode {
           const subIndex = (n as any).substitution_id ?? -1;
           const valueType = (n as any).value_type ?? 0;
           if (subIndex >= 0) {
-            const raw = substitutions?.[subIndex];
+            const raw = valueType === VariantType.BXml ? substitutions?.[subIndex] : undefined;
             // Embedded BXML: parse recursively and push resolved literal parts from its layout
             if (valueType === VariantType.BXml && raw && typeof raw === 'object' && (('bxmlData' in raw) || ('baseOffset' in raw))) {
               try {
@@ -544,6 +569,10 @@ export class ActualTemplateNode {
    * returns entries with names 'Session', 'StartTime'.
    */
   getUserDataLayout(substitutions: any[]): DataLayout {
+    if (this._staticUserLayout === undefined) {
+      this._staticUserLayout = this.probeStatic((subs) => this._computeUserDataLayout(subs));
+    }
+    if (this._staticUserLayout) return this._staticUserLayout;
     const key = substitutions && typeof substitutions === 'object' ? substitutions : null;
     if (key) {
       const hit = this._userLayoutCache.get(key);
