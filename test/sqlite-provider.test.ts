@@ -107,12 +107,15 @@ describe.each(schemas)('SqliteMessageProvider (%s schema)', (schema, makeDb) => 
       expect(await p.getMessageCandidates('Nope', 1)).toEqual([]);
     });
 
-    it('hands out a shared, read-only array so one caller cannot corrupt another', async () => {
+    it('hands each caller its own array, so one caller cannot corrupt another or the memo', async () => {
       const p = new SqliteMessageProvider(makeDb(rows));
       const a = await p.getMessageCandidates('Prov', 1);
-      const b = await p.getMessageCandidates('Prov', 1);
-      expect(b).toBe(a);
-      expect(Object.isFrozen(a)).toBe(true);
+      const expected = [...a];
+      a.sort().reverse();
+      a.push('added by the caller');
+      a.length = 1;
+      expect(await p.getMessageCandidates('Prov', 1)).toEqual(expected);
+      expect(await p.getMessageCandidates('Prov', 1)).toEqual(expected);
     });
   });
 
