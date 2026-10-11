@@ -54,7 +54,20 @@ const schemas: Array<[string, (rows: Row[]) => string]> = [
   ['single-table', singleTableDb],
 ];
 
-describe.each(schemas)('SqliteMessageProvider (%s schema)', (_name, makeDb) => {
+/** Add a row through a second connection, as a catalog builder running next to an open provider would. */
+function addRow(file: string, schema: string, r: Row): void {
+  const db = new Database(file);
+  if (schema === 'two-table') {
+    const id = (db.prepare('SELECT id FROM providers WHERE name = ?').get(r.provider) as any)?.id
+      ?? db.prepare('INSERT INTO providers (name) VALUES (?)').run(r.provider).lastInsertRowid;
+    db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?)').run(id, r.eventId, r.message, r.language ?? null);
+  } else {
+    db.prepare('INSERT INTO messages VALUES (?, ?, ?, ?)').run(r.provider, r.eventId, r.message, r.language ?? null);
+  }
+  db.close();
+}
+
+describe.each(schemas)('SqliteMessageProvider (%s schema)', (schema, makeDb) => {
   describe('lookup', () => {
     it('finds the message', async () => {
       const p = new SqliteMessageProvider(makeDb([{ provider: 'Prov', eventId: 7, message: 'seven', language: 'en-US' }]));
@@ -133,6 +146,31 @@ describe.each(schemas)('SqliteMessageProvider (%s schema)', (_name, makeDb) => {
       expect(await p.getMessage('Prov', 1, 'en-US')).toBe('american');
       expect(await p.getMessage('Prov', 1, 'de-DE')).toBe('deutsch');
       expect(await p.getMessage('Prov', 1, 'fr-FR')).toBe('neutral'); // unknown locale falls back to language-neutral
+    });
+  });
+  describe('a null locale', () => {
+    it('means any language, as it did before rows without a language were matched', async () => {
+      const p = new SqliteMessageProvider(makeDb([{ provider: 'Prov', eventId: 1, message: 'deutsch', language: 'de-DE' }]));
+      expect(await p.getMessage('Prov', 1, null as any)).toBe('deutsch');
+      expect(await p.getMessage('Prov', 1, 'fr-FR')).toBeNull();
+    });
+  });
+
+  describe('maxCacheEntries: 0', () => {
+    it('turns every memo off, so rows and providers added later are found', async () => {
+      const file = makeDb([{ provider: 'Prov', eventId: 1, message: 'one', language: null }]);
+      const p = new SqliteMessageProvider(file, { maxCacheEntries: 0 });
+      expect(await p.getMessage('Prov', 2)).toBeNull();
+      expect(await p.getMessageCandidates('Prov', 2)).toEqual([]);
+      expect(await p.getMessage('Late', 3)).toBeNull();
+
+      addRow(file, schema, { provider: 'Prov', eventId: 2, message: 'two', language: null });
+      addRow(file, schema, { provider: 'Late', eventId: 3, message: 'three', language: null });
+
+      expect(await p.getMessage('Prov', 2)).toBe('two');
+      expect(await p.getMessageCandidates('Prov', 2)).toEqual(['two']);
+      expect(await p.getMessage('Late', 3)).toBe('three');
+      expect(await p.getMessageCandidates('Late', 3)).toEqual(['three']);
     });
   });
 });
