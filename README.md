@@ -328,7 +328,7 @@ setLogger({
 
 Level guidelines used internally
 
-- debug: parsing flow and detailed traces (tokens, offsets, counts)
+- debug: parsing flow and detailed traces (tokens, offsets, counts). The per-token traces are only produced when the process is started with `EVTX_DEBUG=true`; without it a configured logger still receives info, warn and error.
 - info: high‑level lifecycle (e.g., building indexes)
 - warn: recoverable anomalies, unimplemented tokens, fallbacks
 - error: unexpected exceptions or corrupt data that prevents parsing
