@@ -17,6 +17,30 @@ const XML_ENTITIES: Record<string, string> = {
   '"': '&quot;',
   "'": '&#x27;',
 };
+// Cached indentation strings ('  '.repeat(depth) allocated per element otherwise).
+const INDENTS: string[] = [''];
+function indentFor(depth: number): string {
+  while (INDENTS.length <= depth) INDENTS.push(INDENTS[INDENTS.length - 1] + '  ');
+  return INDENTS[depth];
+}
+
+// Equivalent to: text.split('\n').map(l => l ? indent + l : l).join('\n'), without the intermediate arrays.
+function indentLines(text: string, indent: string): string {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const nl = text.indexOf('\n', pos);
+    const end = nl === -1 ? text.length : nl;
+    if (end > pos) out += indent + text.substring(pos, end);
+    if (nl === -1) break;
+    out += '\n';
+    pos = nl + 1;
+  }
+  return out;
+}
+
+const HEX_UPPER: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0').toUpperCase());
+
 function escapeXmlChar(ch: string): string {
   // Special chars map to entities; matched control chars are stripped.
   return XML_ENTITIES[ch] ?? '';
@@ -117,16 +141,18 @@ export class ActualTemplateNode {
       const element = node as any;
       const elementName = element.name || 'unknown';
       
-      // PYTHON APPROACH: Two separate passes like Python's rec() function
-      
-      // FIRST PASS: Collect attributes only (like Python's first loop)
-      const attributes: string[] = [];
-      if (element.children && element.children.length > 0) {
-        for (const child of element.children) {
+      // Single pass over the children: attributes go to the tag, everything else is content.
+      // (AttributeNode / Close* nodes render as '' in the content pass, so skipping them is equivalent.)
+      let attributeString = '';
+      let childContent = '';
+      const children = element.children;
+      if (children && children.length > 0) {
+        for (let ci = 0; ci < children.length; ci++) {
+          const child = children[ci];
           if (child.kind === 'AttributeNode') {
             const attrNode = child as any;
             const attrName = attrNode.name || 'unknown';
-            
+
             // Find the attribute value from the AttributeNode's children
             let attrValue = '';
             if (attrNode.children && attrNode.children.length > 0) {
@@ -147,30 +173,25 @@ export class ActualTemplateNode {
                 attrValue = this.renderNode(valueNode, substitutions, 0);
               }
             }
-            
-            attributes.push(` ${attrName}="${this.escapeXml(attrValue)}"`);
+            attributeString += ` ${attrName}="${this.escapeXml(attrValue)}"`;
+          } else {
+            childContent += this.renderNode(child, substitutions, depth + 1);
           }
         }
       }
-      
-      const attributeString = attributes.join('');
-      
-      // SECOND PASS: Recursively render ALL children (like Python's second loop)
-      // This creates the nested element structure
-      const childContent = element.children
-        ? element.children
-            .map((child: BXmlNode) => this.renderNode(child, substitutions, depth + 1))
-            .join('')
-        : '';
-      
+
       // Build the complete element with proper formatting
       if (childContent.trim()) {
         // If there's content, format it with line breaks and indentation
-        const indent = '  '.repeat(depth);
-        const childIndent = '  '.repeat(depth + 1);
-        const formattedChildContent = childContent.includes('<') 
-          ? '\n' + childContent.split('\n').map((line: string) => line ? childIndent + line : line).join('\n') + '\n' + indent
-          : childContent;
+        const indent = indentFor(depth);
+        const childIndent = indentFor(depth + 1);
+        let formattedChildContent: string;
+        if (childContent.includes('<')) {
+          const body = childContent.indexOf('\n') === -1 ? childIndent + childContent : indentLines(childContent, childIndent);
+          formattedChildContent = '\n' + body + '\n' + indent;
+        } else {
+          formattedChildContent = childContent;
+        }
         return `<${elementName}${attributeString}>${formattedChildContent}</${elementName}>`;
       } else {
         // Self-closing or empty element
@@ -266,9 +287,9 @@ export class ActualTemplateNode {
       case VariantType.Binary:
         // Convert Uint8Array to hex string
         if (value instanceof Uint8Array) {
-          return Array.from(value)
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('').toUpperCase();
+          let hex = '';
+          for (let i = 0; i < value.length; i++) hex += HEX_UPPER[value[i]];
+          return hex;
         }
         return String(value);
       
