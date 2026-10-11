@@ -23,7 +23,7 @@ class RootNode extends BXmlNode {
   private _substitutionsBlockLength: number = 0;
   private _templateInstance: TemplateInstanceNode | null = null;
   private _parentRecord: Record;
-  private _log = getLogger('Record');
+  private get _log() { return getLogger('Record'); }
 
   constructor(
     r: BinaryReader,
@@ -206,7 +206,7 @@ class RootNode extends BXmlNode {
 
     // template_offset is already chunk-relative, don't add chunk.offset
     const templateOffset = this._templateInstance.template_offset;
-    this._log.debug(`🔍 RootNode.template(): Looking for template at chunk-relative offset 0x${templateOffset.toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 RootNode.template(): Looking for template at chunk-relative offset 0x${templateOffset.toString(16)}`);
 
     // Use chunk's template cache or create new template
     return this.chunk.getTemplate(templateOffset);
@@ -217,7 +217,7 @@ class RootNode extends BXmlNode {
 
 export class Record extends Block {
   private _chunk: ChunkHeader;
-  private _log = getLogger('Record');
+  private get _log() { return getLogger('Record'); }
   // PERFORMANCE: Cache parsed RootNode to avoid re-parsing
   private _cachedRoot: BXmlNode | null = null;
 
@@ -326,7 +326,7 @@ export class Record extends Block {
       return '<Event/>';
     }
 
-    this._log.debug(`📄 Record: Rendering XML using template instance with ${rootNode.substitutions.length} substitutions`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`📄 Record: Rendering XML using template instance with ${rootNode.substitutions.length} substitutions`);
     return templateInstance.renderXml(rootNode.substitutions);
   }
 }

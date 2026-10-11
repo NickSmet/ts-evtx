@@ -22,7 +22,8 @@ export interface ParsedVariantResult {
  * Parser for EVTX variant values
  */
 export class VariantValueParser {
-  private _log = getLogger('VariantValueParser');
+  // Lazy: avoids a logger lookup/allocation per parser instance (one per substitution/value node).
+  private get _log() { return getLogger('VariantValueParser'); }
   constructor(private r: BinaryReader) {}
 
   /**

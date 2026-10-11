@@ -4,7 +4,7 @@ import { BinaryReader, crc32Checksum } from "../binary/BinaryReader";
 import { Record, InvalidRecordException } from "./Record";
 import { TemplateNode } from './TemplateNode';
 import { ActualTemplateNode } from './ActualTemplateNode';
-import { getLogger } from '../logging/logger.js';
+import { getLogger, ENABLE_DEBUG_LOGGING } from '../logging/logger.js';
 import { BXmlNode } from './BXmlNode';
 // import { TemplateNode } from "./node-specialisations";
 
@@ -280,7 +280,7 @@ export class ChunkHeader extends Block {
       return this._templates.get(offset)!;
     }
 
-    this._log.debug(`🔧 addTemplate(): Creating template at offset 0x${offset.toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔧 addTemplate(): Creating template at offset 0x${offset.toString(16)}`);
     
     try {
       // Create a new TemplateNode at the specified offset using a cloned reader
@@ -288,7 +288,7 @@ export class ChunkHeader extends Block {
       const cloned = new BinaryReader(this.r.bytesAt(0, this.r.size));
       const templateNode = new TemplateNode(cloned, offset, this);
       this._templates.set(offset, templateNode);
-      this._log.debug(`✅ addTemplate(): Successfully added template, dataLength=${templateNode.dataLength}`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ addTemplate(): Successfully added template, dataLength=${templateNode.dataLength}`);
       return templateNode;
     } catch (error) {
       this._log.error(`❌ addTemplate(): Failed to create template at offset 0x${offset.toString(16)}:`, error);

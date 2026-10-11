@@ -43,9 +43,9 @@ export class ActualTemplateNode {
   constructor(templateNode: TemplateNode) {
     this._templateNode = templateNode;
     this._rootElement = this.findRootElement();
-    this._log.debug(`🏗️ Created from TemplateNode with ${templateNode.children.length} children`);
-    this._log.debug(`   Template ID: ${templateNode.templateId}`);
-    this._log.debug(`   Root element: ${this._rootElement ? (this._rootElement as any).name || 'unknown' : 'none'}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏗️ Created from TemplateNode with ${templateNode.children.length} children`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Template ID: ${templateNode.templateId}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Root element: ${this._rootElement ? (this._rootElement as any).name || 'unknown' : 'none'}`);
   }
 
   // Getters
@@ -61,7 +61,7 @@ export class ActualTemplateNode {
     // Find the first OpenStartElementNode which will be our root element
     for (const node of this._templateNode.children) {
       if (node.kind === 'OpenStartElementNode') {
-        this._log.debug(`🎯 Root element found: ${(node as any).name || 'unknown'}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎯 Root element found: ${(node as any).name || 'unknown'}`);
         return node;
       }
     }
@@ -80,7 +80,7 @@ export class ActualTemplateNode {
       return '<Event/>';
     }
 
-    this._log.debug(`🎨 Rendering XML with ${substitutions.length} substitutions`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Rendering XML with ${substitutions.length} substitutions`);
     
     try {
       return this.renderNode(this._rootElement, substitutions, 0);
@@ -296,7 +296,7 @@ export class ActualTemplateNode {
         // BXml contains embedded binary XML data that needs to be parsed and rendered
         // This follows Python's approach: if isinstance(sub, e_nodes.BXmlTypeNode): sub = render_root_node(sub.root())
         if (value && typeof value === 'object' && 'bxmlData' in value && value.isBXml) {
-          this._log.debug(`🔍 Processing BXml substitution with ${value.bxmlData?.length || 0} bytes`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 Processing BXml substitution with ${value.bxmlData?.length || 0} bytes`);
           
           const bxmlData = value.bxmlData as Uint8Array;
           if (bxmlData && bxmlData.length > 0) {
@@ -307,12 +307,12 @@ export class ActualTemplateNode {
                 const base = (value as any).baseOffset as number;
                 const len = (value as any).length as number;
                 const renderedXml = BXmlParser.parseAndRenderBXmlAtOffset(base, len, chunk);
-                this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
+                if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
                 return renderedXml;
               }
               const renderedXml = BXmlParser.parseAndRenderBXml(bxmlData, chunk);
               
-              this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
+              if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
               return renderedXml;
             } catch (error) {
               this._log.warn('Error parsing embedded BXML:', error);
