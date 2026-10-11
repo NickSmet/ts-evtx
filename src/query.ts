@@ -19,6 +19,10 @@ export interface EvtxQuery {
 
   toArray(): Promise<Array<ResolvedEvent & { message?: string }>>;
   forEach(fn: (e: ResolvedEvent & { message?: string }) => void | Promise<void>): Promise<void>;
+  /**
+   * Exports resolve once everything has been flushed. A stream is written in chunks of whole lines
+   * and its backpressure is honoured, so it has to be consumed while the export runs.
+   */
   toJSONL(pathOrStream?: string | NodeJS.WritableStream): Promise<void>;
   toCSV(pathOrStream?: string | NodeJS.WritableStream, opts?: { header?: boolean }): Promise<void>;
   stats(): Promise<any>;
@@ -90,6 +94,21 @@ function matchObject(e: ResolvedEvent, cond: Record<string, unknown>): boolean {
   return true;
 }
 
+/**
+ * Options for the packaged message provider. Versions of @ts-evtx/messages that predate
+ * getMessageCandidates() only find the rows of the packaged catalog (language = NULL) once the
+ * catalog is preloaded, so keep preloading for them; newer versions look rows up on demand.
+ */
+function smartProviderOptions(mod: any, options: Record<string, unknown>): Record<string, unknown> {
+  const looksUpOnDemand = typeof mod.SmartManagedMessageProvider?.prototype?.getMessageCandidates === 'function';
+  return looksUpOnDemand ? options : { ...options, preload: true };
+}
+
+/** Real streams report errors and backpressure through events; a bare `{ write, end }` object cannot. */
+function hasStreamEvents(out: any): boolean {
+  return typeof out.on === 'function' && typeof out.once === 'function' && typeof out.off === 'function';
+}
+
 class EvtxQueryImpl implements EvtxQuery {
   private inputs: string[];
   private opts: EvtxQueryOptions;
@@ -127,7 +146,7 @@ class EvtxQueryImpl implements EvtxQuery {
       try {
         const mod: any = await import('@ts-evtx/messages');
         // SqliteMessageProvider will throw if the DB cannot be opened
-        return new mod.SmartManagedMessageProvider({ customDbPath: dbPath });
+        return new mod.SmartManagedMessageProvider(smartProviderOptions(mod, { customDbPath: dbPath }));
       } catch (e: any) {
         throw new Error(`Failed to initialize message provider from path: ${dbPath}. ${e?.message || e}`);
       }
@@ -135,7 +154,7 @@ class EvtxQueryImpl implements EvtxQuery {
     // Auto (implicit): use packaged universal DB
     try {
       const mod: any = await import('@ts-evtx/messages');
-      return new mod.SmartManagedMessageProvider({});
+      return new mod.SmartManagedMessageProvider(smartProviderOptions(mod, {}));
     } catch (e: any) {
       throw new Error(`Failed to initialize built-in message provider: ${e?.message || e}`);
     }
@@ -228,15 +247,16 @@ class EvtxQueryImpl implements EvtxQuery {
   private static sink(out: NodeJS.WritableStream, chunkChars = 1 << 18) {
     let buf = '';
     let failure: Error | undefined;
+    const events = hasStreamEvents(out);
     const onError = (e: Error) => { failure ??= e; };
-    out.on('error', onError);
+    if (events) out.on('error', onError);
 
     const flush = async () => {
       if (failure) throw failure;
       if (!buf) return;
       const chunk = buf;
       buf = '';
-      if (out.write(chunk)) return;
+      if (out.write(chunk) !== false || !events) return;
       await new Promise<void>((resolve, reject) => {
         const settle = (err?: Error) => {
           out.off('drain', onDrain); out.off('close', onClose); out.off('error', onErr);
@@ -255,11 +275,13 @@ class EvtxQueryImpl implements EvtxQuery {
         if (buf.length >= chunkChars) await flush();
       },
       flush,
-      dispose() { out.off('error', onError); },
+      dispose() { if (events) out.off('error', onError); },
     };
   }
 
   private static async finish(out: NodeJS.WritableStream): Promise<void> {
+    if (typeof (out as any).end !== 'function') return;
+    if (!hasStreamEvents(out)) { (out as any).end(); return; }
     await new Promise<void>((resolve, reject) => {
       out.once('finish', resolve);
       out.once('error', reject);
