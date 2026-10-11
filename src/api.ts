@@ -698,7 +698,7 @@ export async function getRecord(filePath: string, recordNumber: number): Promise
 
 const placeholderMax = templatePlaceholderMax;
 
-async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions = {}): Promise<ResolvedEvent> {
+async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions = {}, pre?: { info: any; timestamp: string }): Promise<ResolvedEvent> {
   const {
     includeXml, // legacy
     includeRawXml = includeXml ?? false,
@@ -711,10 +711,10 @@ async function buildResolvedEventFromRecord(rec: any, options: EventReadOptions 
     messageStrategy = 'best-effort',
   } = options;
 
-  const timestamp = rec.timestampAsDate().toISOString();
+  const timestamp = pre ? pre.timestamp : rec.timestampAsDate().toISOString();
   
   // PERFORMANCE: Use fast extraction first, only render XML if needed
-  let info = extractBasicInfoFast(rec);
+  let info = pre ? pre.info : extractBasicInfoFast(rec);
   let xml = '';
   let xmlRendered = false;
   
@@ -886,91 +886,9 @@ function extractBasicInfoFast(rec: any): any {
     const rootNode = rec.root() as any;
     const ti = rootNode.templateInstance?.();
     if (!ti) return {};
-    
-    const chunk = rootNode.chunk;
-    const actual = chunk.getActualTemplate(ti.template_offset);
+    const actual = rootNode.chunk.getActualTemplate(ti.template_offset);
     if (!actual) return {};
-    
-    const subs = rootNode.substitutions || [];
-    const result: any = {};
-    
-    // Helper to extract value from node
-    const extractValue = (node: any): any => {
-      if (node?.data != null) return node.data;
-      if ((node as any)?.substitution_id != null) {
-        const idx = (node as any).substitution_id;
-        if (idx >= 0 && idx < subs.length) return subs[idx];
-      }
-      return null;
-    };
-    
-    // Try to extract fields from template System section
-    const rootElem = actual.rootElement;
-    if (rootElem && rootElem.children) {
-      for (const child of rootElem.children) {
-        if ((child as any).name === 'System' && child.children) {
-          for (const sysChild of child.children) {
-            const childName = (sysChild as any).name;
-            
-            // Provider
-            if (childName === 'Provider' && sysChild.children) {
-              for (const attr of sysChild.children) {
-                if ((attr as any).name === 'Name') {
-                  const val = extractValue(attr.children?.[0]);
-                  if (val != null) {
-                    result.provider = result.provider || {};
-                    result.provider.name = String(val);
-                  }
-                }
-                if ((attr as any).name === 'Guid') {
-                  const val = extractValue(attr.children?.[0]);
-                  if (val != null) {
-                    result.provider = result.provider || {};
-                    result.provider.guid = String(val);
-                  }
-                }
-                if ((attr as any).name === 'EventSourceName') {
-                  const val = extractValue(attr.children?.[0]);
-                  if (val != null) result.eventSourceName = String(val);
-                }
-              }
-            }
-            
-            // EventID
-            if (childName === 'EventID' && sysChild.children?.[0]) {
-              const val = extractValue(sysChild.children[0]);
-              if (val != null) result.eventId = parseInt(String(val), 10);
-            }
-            
-            // Level
-            if (childName === 'Level' && sysChild.children?.[0]) {
-              const val = extractValue(sysChild.children[0]);
-              if (val != null) result.level = parseInt(String(val), 10);
-            }
-            
-            // Channel
-            if (childName === 'Channel' && sysChild.children?.[0]) {
-              const val = extractValue(sysChild.children[0]);
-              if (val != null) result.channel = String(val);
-            }
-            
-            // Computer
-            if (childName === 'Computer' && sysChild.children?.[0]) {
-              const val = extractValue(sysChild.children[0]);
-              if (val != null) result.computer = String(val);
-            }
-            
-            // EventRecordID
-            if (childName === 'EventRecordID' && sysChild.children?.[0]) {
-              const val = extractValue(sysChild.children[0]);
-              if (val != null) result.eventRecordId = parseInt(String(val), 10);
-            }
-          }
-        }
-      }
-    }
-    
-    return result;
+    return actual.extractSystemInfo(rootNode.substitutions || []);
   } catch {
     return {};
   }
@@ -1007,7 +925,7 @@ export async function* readResolvedEvents(filePath: string, options: EventReadOp
     if (eventId != null && info.eventId !== eventId) continue;
     if (provider && !((info.provider?.name || info.provider?.guid || '').includes(provider))) continue;
 
-    const ev = await buildResolvedEventFromRecord(rec, options);
+    const ev = await buildResolvedEventFromRecord(rec, options, { info, timestamp: ts });
     emitted++;
     yield ev;
   }

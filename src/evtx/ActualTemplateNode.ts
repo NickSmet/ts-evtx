@@ -46,6 +46,11 @@ function escapeXmlChar(ch: string): string {
   return XML_ENTITIES[ch] ?? '';
 }
 
+type SystemPlan = {
+  providerName?: any; providerGuid?: any; eventSourceName?: any; eventId?: any; level?: any; task?: any;
+  opcode?: any; keywords?: any; eventRecordId?: any; channel?: any; computer?: any; pid?: any; tid?: any; userId?: any;
+};
+
 type DataLayout = Array<{ name?: string | null; parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> }>;
 
 /**
@@ -89,6 +94,88 @@ export class ActualTemplateNode {
     if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏗️ Created from TemplateNode with ${templateNode.children.length} children`);
     if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Template ID: ${templateNode.templateId}`);
     if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Root element: ${this._rootElement ? (this._rootElement as any).name || 'unknown' : 'none'}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // System-section extraction. The *structure* (which node holds EventID, Channel,
+  // ...) is a property of the template, so it is located once per template; per record
+  // only the substitution lookups remain.
+  // ---------------------------------------------------------------------------
+  private _sysPlan: SystemPlan | null | undefined;
+
+  private buildSystemPlan(): SystemPlan | null {
+    const root = this._rootElement as any;
+    if (!root) return null;
+    let sys: any = null;
+    for (const c of root.children || []) {
+      if (c.kind === 'OpenStartElementNode' && c.name === 'System') { sys = c; break; }
+    }
+    if (!sys) return null;
+    const isValue = (n: any) => n.kind === 'ValueTextNode' || n.kind === 'NormalSubstitutionNode' || n.kind === 'OptionalSubstitutionNode';
+    const textNode = (el: any) => (el.children || []).find(isValue) ?? null;
+    const attrNode = (el: any, name: string) => {
+      for (const a of el.children || []) if (a.kind === 'AttributeNode' && a.name === name) return a.children?.[0] ?? null;
+      return null;
+    };
+    const plan: SystemPlan = {};
+    for (const el of sys.children || []) {
+      if (el.kind !== 'OpenStartElementNode') continue;
+      switch (el.name) {
+        case 'Provider': plan.providerName = attrNode(el, 'Name'); plan.providerGuid = attrNode(el, 'Guid'); plan.eventSourceName = attrNode(el, 'EventSourceName'); break;
+        case 'EventID': plan.eventId = textNode(el); break;
+        case 'Level': plan.level = textNode(el); break;
+        case 'Task': plan.task = textNode(el); break;
+        case 'Opcode': plan.opcode = textNode(el); break;
+        case 'Keywords': plan.keywords = textNode(el); break;
+        case 'EventRecordID': plan.eventRecordId = textNode(el); break;
+        case 'Channel': plan.channel = textNode(el); break;
+        case 'Computer': plan.computer = textNode(el); break;
+        case 'Execution': plan.pid = attrNode(el, 'ProcessID'); plan.tid = attrNode(el, 'ThreadID'); break;
+        case 'Security': plan.userId = attrNode(el, 'UserID'); break;
+      }
+    }
+    return plan;
+  }
+
+  /** Text a value/substitution node would render as in the XML (null = absent/empty). */
+  private nodeText(node: any, subs: any[]): string | null {
+    if (!node) return null;
+    if (node.kind === 'ValueTextNode') return node.data == null ? null : String(node.data);
+    const id = node.substitution_id;
+    if (id == null || id < 0 || id >= subs.length) return null;
+    const raw = subs[id];
+    if (raw === null || raw === undefined) return null;
+    return this.formatValueForXml(raw, node.value_type);
+  }
+
+  /**
+   * Extract the commonly used System fields straight from the substitutions,
+   * without rendering XML. Mirrors what parseXmlContentDetailed() would recover
+   * from the rendered XML (digits-only numerics, non-empty strings).
+   */
+  extractSystemInfo(subs: any[]): any {
+    if (this._sysPlan === undefined) this._sysPlan = this.buildSystemPlan();
+    const plan = this._sysPlan;
+    const out: any = {};
+    if (!plan) return out;
+    const num = (n: any): number | undefined => { const t = this.nodeText(n, subs); return t !== null && /^\d+$/.test(t) ? parseInt(t, 10) : undefined; };
+    const str = (n: any): string | undefined => { const t = this.nodeText(n, subs); return t !== null && t.length ? t : undefined; };
+
+    const pn = this.nodeText(plan.providerName, subs); const pg = this.nodeText(plan.providerGuid, subs);
+    if (pn !== null || pg !== null) { out.provider = {}; if (pn !== null) out.provider.name = pn; if (pg !== null) out.provider.guid = pg; }
+    const esn = this.nodeText(plan.eventSourceName, subs); if (esn !== null) out.eventSourceName = esn;
+    const eventId = num(plan.eventId); if (eventId !== undefined) out.eventId = eventId;
+    const level = num(plan.level); if (level !== undefined) out.level = level;
+    const task = num(plan.task); if (task !== undefined) out.task = task;
+    const opcode = num(plan.opcode); if (opcode !== undefined) out.opcode = opcode;
+    const keywords = str(plan.keywords); if (keywords !== undefined) out.keywords = keywords;
+    const rid = num(plan.eventRecordId); if (rid !== undefined) out.eventRecordId = rid;
+    const channel = str(plan.channel); if (channel !== undefined) out.channel = channel;
+    const computer = str(plan.computer); if (computer !== undefined) out.computer = computer;
+    const pid = num(plan.pid), tid = num(plan.tid);
+    if (pid !== undefined && tid !== undefined) out.execution = { processId: pid, threadId: tid };
+    const uid = str(plan.userId); if (uid !== undefined) out.security = { userId: uid };
+    return out;
   }
 
   // Getters
