@@ -388,7 +388,7 @@ export class ActualTemplateNode {
     // Find first <EventData>
     const eventDataNodes: any[] = [];
     this.walk(root as any, (n: any) => {
-      if (n?.constructor?.name === 'OpenStartElementNode' && (n.name === 'EventData')) {
+      if (n?.kind === 'OpenStartElementNode' && (n.name === 'EventData')) {
         eventDataNodes.push(n);
       }
     });
@@ -427,21 +427,21 @@ export class ActualTemplateNode {
 
     const ed = eventDataNodes[0];
     for (const child of (ed.children || [])) {
-      if (child?.constructor?.name !== 'OpenStartElementNode') continue;
+      if (child?.kind !== 'OpenStartElementNode') continue;
       const name = (child as any).name || '';
       if (name !== 'Data') continue;
       const parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> = [];
       // Extract Name attribute (if present)
       let dataName: string | null = null;
       try {
-        const attrNodes = (child as any).children?.filter((c: any) => c?.constructor?.name === 'AttributeNode') || [];
+        const attrNodes = (child as any).children?.filter((c: any) => c?.kind === 'AttributeNode') || [];
         for (const an of attrNodes) {
           const attrName = (an as any).name || (an as any).attribute_name || '';
           if (String(attrName).toLowerCase() === 'name') {
             const valNode = (an as any).children?.[0];
-            if (valNode?.constructor?.name === 'ValueTextNode') {
+            if (valNode?.kind === 'ValueTextNode') {
               dataName = String(valNode.data ?? '') || null;
-            } else if (valNode && String(valNode.constructor?.name || '').includes('SubstitutionNode')) {
+            } else if (valNode && String(valNode?.kind || '').includes('SubstitutionNode')) {
               const idx = (valNode as any).substitution_id ?? -1;
               if (idx >= 0 && substitutions && idx < substitutions.length) {
                 dataName = this.formatForMessage(substitutions[idx]) || null;
@@ -454,7 +454,7 @@ export class ActualTemplateNode {
 
       // Walk this <Data> content
       const visit = (n: any) => {
-        const t = n?.constructor?.name;
+        const t = n?.kind;
         if (!t) return;
         if (t === 'ValueTextNode') {
           const txt = String((n as any).data ?? '');
@@ -561,7 +561,7 @@ export class ActualTemplateNode {
 
     const userDataNodes: any[] = [];
     this.walk(root, (n: any) => {
-      if (n?.constructor?.name === 'OpenStartElementNode' && (n.name === 'UserData')) {
+      if (n?.kind === 'OpenStartElementNode' && (n.name === 'UserData')) {
         userDataNodes.push(n);
       }
     });
@@ -569,7 +569,7 @@ export class ActualTemplateNode {
     const ud = userDataNodes[0];
     const collectTextParts = (node: any, parts: any[]) => {
       const visit = (n: any) => {
-        const t = n?.constructor?.name;
+        const t = n?.kind;
         if (!t) return;
         if (t === 'ValueTextNode') {
           const txt = String((n as any).data ?? '');
@@ -589,11 +589,11 @@ export class ActualTemplateNode {
     };
 
     // Walk first-level container (e.g., <RmEvent>) children
-    const container = (ud.children || []).find((c: any) => c?.constructor?.name === 'OpenStartElementNode');
+    const container = (ud.children || []).find((c: any) => c?.kind === 'OpenStartElementNode');
     const fieldsParent = container || ud;
 
     // Case A: concrete child elements are present under UserData
-    const openChildren = (fieldsParent.children || []).filter((c: any) => c?.constructor?.name === 'OpenStartElementNode');
+    const openChildren = (fieldsParent.children || []).filter((c: any) => c?.kind === 'OpenStartElementNode');
     if (openChildren.length) {
       for (const ch of openChildren) {
         const fieldName = (ch as any).name || null;
@@ -606,7 +606,7 @@ export class ActualTemplateNode {
 
     // Case B: content injected via BXML substitution directly under UserData
     for (const ch of (fieldsParent.children || [])) {
-      const t = ch?.constructor?.name || '';
+      const t = ch?.kind || '';
       if (t.endsWith('SubstitutionNode')) {
         const subIndex = (ch as any).substitution_id ?? -1;
         const valueType = (ch as any).value_type ?? 0;
@@ -646,7 +646,7 @@ export class ActualTemplateNode {
               const innerRoot: any = embedded.actual.rootElement;
               const children = (innerRoot?.children || []) as any[];
               for (const kid of children) {
-                if (kid?.constructor?.name !== 'OpenStartElementNode') continue;
+                if (kid?.kind !== 'OpenStartElementNode') continue;
                 const fieldName = (kid as any).name || null;
                 const parts: any[] = [];
                 collectTextParts(kid, parts);
@@ -712,7 +712,7 @@ export class ActualTemplateNode {
   private collectParts(node: any): Array<{ kind: 'lit' | 'sub'; text?: string; subIndex?: number }> {
     const parts: Array<{ kind: 'lit' | 'sub'; text?: string; subIndex?: number }> = [];
     const visit = (n: any) => {
-      const t = n?.constructor?.name;
+      const t = n?.kind;
       if (!t) return;
       if (t === 'ValueTextNode') {
         const txt = String((n as any).data ?? '');
