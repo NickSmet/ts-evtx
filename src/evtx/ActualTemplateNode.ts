@@ -116,9 +116,13 @@ export class ActualTemplateNode {
     }
     if (!sys) return null;
     const isValue = (n: any) => n.kind === 'ValueTextNode' || n.kind === 'NormalSubstitutionNode' || n.kind === 'OptionalSubstitutionNode';
-    const textNode = (el: any) => (el.children || []).find(isValue) ?? null;
+    // A literal is the same for every record using the template: resolve its text once, here.
+    const resolved = (n: any) => (n && n.kind === 'ValueTextNode'
+      ? { kind: 'Literal', text: n.data == null ? null : String(n.data).replace(XML_INVALID_CONTROL_RE, '') }
+      : n);
+    const textNode = (el: any) => resolved((el.children || []).find(isValue) ?? null);
     const attrNode = (el: any, name: string) => {
-      for (const a of el.children || []) if (a.kind === 'AttributeNode' && a.name === name) return a.children?.[0] ?? null;
+      for (const a of el.children || []) if (a.kind === 'AttributeNode' && a.name === name) return resolved(a.children?.[0] ?? null);
       return null;
     };
     const plan: SystemPlan = {};
@@ -144,7 +148,7 @@ export class ActualTemplateNode {
   /** Text a value/substitution node would render as in the XML (null = absent/empty). */
   private nodeText(node: any, subs: any[]): string | null {
     if (!node) return null;
-    if (node.kind === 'ValueTextNode') return node.data == null ? null : String(node.data).replace(XML_INVALID_CONTROL_RE, '');
+    if (node.kind === 'Literal') return node.text;
     const id = node.substitution_id;
     if (id == null || id < 0 || id >= subs.length) return null;
     const raw = subs[id];
