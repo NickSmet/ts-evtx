@@ -42,7 +42,7 @@
     "package.json"
   ],
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^11.0.0 || ^12.11.1",
     "commander": "^12.1.0",
     "@ts-evtx/core": "^1.0.4"
   },

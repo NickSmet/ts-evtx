@@ -284,6 +284,8 @@ Run the test suite:
 npm test
 ```
 
+The message-catalog tests use `better-sqlite3`, a native module whose binary fits one Node.js major version. `npm test` rebuilds it automatically after you switch Node versions; if you call `jest` directly, run `npm rebuild better-sqlite3` first.
+
 ## Logging
 
 The library does not write to the console by default. Internals use a centralized logger abstraction that is a no‑op until you configure it. This avoids noisy output in consuming apps while still allowing deep diagnostics when needed.
