@@ -17,10 +17,43 @@ const XML_ENTITIES: Record<string, string> = {
   '"': '&quot;',
   "'": '&#x27;',
 };
+// Cached indentation strings ('  '.repeat(depth) allocated per element otherwise).
+const INDENTS: string[] = [''];
+function indentFor(depth: number): string {
+  while (INDENTS.length <= depth) INDENTS.push(INDENTS[INDENTS.length - 1] + '  ');
+  return INDENTS[depth];
+}
+
+// Equivalent to: text.split('\n').map(l => l ? indent + l : l).join('\n'), without the intermediate arrays.
+function indentLines(text: string, indent: string): string {
+  let out = '';
+  let pos = 0;
+  for (;;) {
+    const nl = text.indexOf('\n', pos);
+    const end = nl === -1 ? text.length : nl;
+    if (end > pos) out += indent + text.substring(pos, end);
+    if (nl === -1) break;
+    out += '\n';
+    pos = nl + 1;
+  }
+  return out;
+}
+
+// The control characters XML_ESCAPE_RE strips from rendered XML. Fields read straight from the
+// substitutions must not carry them either, or they would differ from the XML of the same record.
+const XML_INVALID_CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g;
+
+const HEX_UPPER: string[] = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0').toUpperCase());
+
 function escapeXmlChar(ch: string): string {
   // Special chars map to entities; matched control chars are stripped.
   return XML_ENTITIES[ch] ?? '';
 }
+
+type SystemPlan = {
+  providerName?: any; providerGuid?: any; eventSourceName?: any; eventId?: any; level?: any; task?: any;
+  opcode?: any; keywords?: any; eventRecordId?: any; channel?: any; computer?: any; pid?: any; tid?: any; userId?: any;
+};
 
 type DataLayout = Array<{ name?: string | null; parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> }>;
 
@@ -39,13 +72,120 @@ export class ActualTemplateNode {
   // by GC once the substitutions array is no longer referenced.
   private _eventLayoutCache = new WeakMap<object, DataLayout>();
   private _userLayoutCache = new WeakMap<object, DataLayout>();
+  // undefined = not probed yet; null = layout depends on substitution values; else the shared static layout.
+  private _staticEventLayout: DataLayout | null | undefined;
+  private _staticUserLayout: DataLayout | null | undefined;
+
+  /**
+   * Run a layout computation against a probe array that records whether the
+   * computation ever reads a substitution. If it does not, the result is a pure
+   * function of the template and can be shared by every record using it.
+   */
+  private probeStatic(compute: (subs: any[]) => DataLayout): DataLayout | null {
+    let touched = false;
+    const probe = new Proxy([] as any[], {
+      get(t, p, r) { touched = true; return Reflect.get(t, p, r); },
+      has(t, p) { touched = true; return Reflect.has(t, p); },
+    });
+    let out: DataLayout;
+    try { out = compute(probe); } catch { return null; }
+    return touched ? null : out;
+  }
 
   constructor(templateNode: TemplateNode) {
     this._templateNode = templateNode;
     this._rootElement = this.findRootElement();
-    this._log.debug(`🏗️ Created from TemplateNode with ${templateNode.children.length} children`);
-    this._log.debug(`   Template ID: ${templateNode.templateId}`);
-    this._log.debug(`   Root element: ${this._rootElement ? (this._rootElement as any).name || 'unknown' : 'none'}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏗️ Created from TemplateNode with ${templateNode.children.length} children`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Template ID: ${templateNode.templateId}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Root element: ${this._rootElement ? (this._rootElement as any).name || 'unknown' : 'none'}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // System-section extraction. The *structure* (which node holds EventID, Channel,
+  // ...) is a property of the template, so it is located once per template; per record
+  // only the substitution lookups remain.
+  // ---------------------------------------------------------------------------
+  private _sysPlan: SystemPlan | null | undefined;
+
+  private buildSystemPlan(): SystemPlan | null {
+    const root = this._rootElement as any;
+    if (!root) return null;
+    let sys: any = null;
+    for (const c of root.children || []) {
+      if (c.kind === 'OpenStartElementNode' && c.name === 'System') { sys = c; break; }
+    }
+    if (!sys) return null;
+    const isValue = (n: any) => n.kind === 'ValueTextNode' || n.kind === 'NormalSubstitutionNode' || n.kind === 'OptionalSubstitutionNode';
+    // A literal is the same for every record using the template: resolve its text once, here.
+    const resolved = (n: any) => (n && n.kind === 'ValueTextNode'
+      ? { kind: 'Literal', text: n.data == null ? null : String(n.data).replace(XML_INVALID_CONTROL_RE, '') }
+      : n);
+    const textNode = (el: any) => resolved((el.children || []).find(isValue) ?? null);
+    const attrNode = (el: any, name: string) => {
+      for (const a of el.children || []) if (a.kind === 'AttributeNode' && a.name === name) return resolved(a.children?.[0] ?? null);
+      return null;
+    };
+    const plan: SystemPlan = {};
+    for (const el of sys.children || []) {
+      if (el.kind !== 'OpenStartElementNode') continue;
+      switch (el.name) {
+        case 'Provider': plan.providerName = attrNode(el, 'Name'); plan.providerGuid = attrNode(el, 'Guid'); plan.eventSourceName = attrNode(el, 'EventSourceName'); break;
+        case 'EventID': plan.eventId = textNode(el); break;
+        case 'Level': plan.level = textNode(el); break;
+        case 'Task': plan.task = textNode(el); break;
+        case 'Opcode': plan.opcode = textNode(el); break;
+        case 'Keywords': plan.keywords = textNode(el); break;
+        case 'EventRecordID': plan.eventRecordId = textNode(el); break;
+        case 'Channel': plan.channel = textNode(el); break;
+        case 'Computer': plan.computer = textNode(el); break;
+        case 'Execution': plan.pid = attrNode(el, 'ProcessID'); plan.tid = attrNode(el, 'ThreadID'); break;
+        case 'Security': plan.userId = attrNode(el, 'UserID'); break;
+      }
+    }
+    return plan;
+  }
+
+  /** Text a value/substitution node would render as in the XML (null = absent/empty). */
+  private nodeText(node: any, subs: any[]): string | null {
+    if (!node) return null;
+    if (node.kind === 'Literal') return node.text;
+    const id = node.substitution_id;
+    if (id == null || id < 0 || id >= subs.length) return null;
+    const raw = subs[id];
+    if (raw === null || raw === undefined) return null;
+    const text = this.formatValueForXml(raw, node.value_type);
+    // Numbers cannot contain control characters; skip the scan for them.
+    return typeof raw === 'number' || typeof raw === 'bigint' ? text : text.replace(XML_INVALID_CONTROL_RE, '');
+  }
+
+  /**
+   * Extract the commonly used System fields straight from the substitutions,
+   * without rendering XML. Mirrors what parseXmlContentDetailed() would recover
+   * from the rendered XML (digits-only numerics, non-empty strings).
+   */
+  extractSystemInfo(subs: any[]): any {
+    if (this._sysPlan === undefined) this._sysPlan = this.buildSystemPlan();
+    const plan = this._sysPlan;
+    const out: any = {};
+    if (!plan) return out;
+    const num = (n: any): number | undefined => { const t = this.nodeText(n, subs); return t !== null && /^\d+$/.test(t) ? parseInt(t, 10) : undefined; };
+    const str = (n: any): string | undefined => { const t = this.nodeText(n, subs); return t !== null && t.length ? t : undefined; };
+
+    const pn = this.nodeText(plan.providerName, subs); const pg = this.nodeText(plan.providerGuid, subs);
+    if (pn !== null || pg !== null) { out.provider = {}; if (pn !== null) out.provider.name = pn; if (pg !== null) out.provider.guid = pg; }
+    const esn = this.nodeText(plan.eventSourceName, subs); if (esn !== null) out.eventSourceName = esn;
+    const eventId = num(plan.eventId); if (eventId !== undefined) out.eventId = eventId;
+    const level = num(plan.level); if (level !== undefined) out.level = level;
+    const task = num(plan.task); if (task !== undefined) out.task = task;
+    const opcode = num(plan.opcode); if (opcode !== undefined) out.opcode = opcode;
+    const keywords = str(plan.keywords); if (keywords !== undefined) out.keywords = keywords;
+    const rid = num(plan.eventRecordId); if (rid !== undefined) out.eventRecordId = rid;
+    const channel = str(plan.channel); if (channel !== undefined) out.channel = channel;
+    const computer = str(plan.computer); if (computer !== undefined) out.computer = computer;
+    const pid = num(plan.pid), tid = num(plan.tid);
+    if (pid !== undefined && tid !== undefined) out.execution = { processId: pid, threadId: tid };
+    const uid = str(plan.userId); if (uid !== undefined) out.security = { userId: uid };
+    return out;
   }
 
   // Getters
@@ -61,7 +201,7 @@ export class ActualTemplateNode {
     // Find the first OpenStartElementNode which will be our root element
     for (const node of this._templateNode.children) {
       if (node.kind === 'OpenStartElementNode') {
-        this._log.debug(`🎯 Root element found: ${(node as any).name || 'unknown'}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎯 Root element found: ${(node as any).name || 'unknown'}`);
         return node;
       }
     }
@@ -80,7 +220,7 @@ export class ActualTemplateNode {
       return '<Event/>';
     }
 
-    this._log.debug(`🎨 Rendering XML with ${substitutions.length} substitutions`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Rendering XML with ${substitutions.length} substitutions`);
     
     try {
       return this.renderNode(this._rootElement, substitutions, 0);
@@ -98,16 +238,18 @@ export class ActualTemplateNode {
       const element = node as any;
       const elementName = element.name || 'unknown';
       
-      // PYTHON APPROACH: Two separate passes like Python's rec() function
-      
-      // FIRST PASS: Collect attributes only (like Python's first loop)
-      const attributes: string[] = [];
-      if (element.children && element.children.length > 0) {
-        for (const child of element.children) {
+      // Single pass over the children: attributes go to the tag, everything else is content.
+      // (AttributeNode / Close* nodes render as '' in the content pass, so skipping them is equivalent.)
+      let attributeString = '';
+      let childContent = '';
+      const children = element.children;
+      if (children && children.length > 0) {
+        for (let ci = 0; ci < children.length; ci++) {
+          const child = children[ci];
           if (child.kind === 'AttributeNode') {
             const attrNode = child as any;
             const attrName = attrNode.name || 'unknown';
-            
+
             // Find the attribute value from the AttributeNode's children
             let attrValue = '';
             if (attrNode.children && attrNode.children.length > 0) {
@@ -128,30 +270,25 @@ export class ActualTemplateNode {
                 attrValue = this.renderNode(valueNode, substitutions, 0);
               }
             }
-            
-            attributes.push(` ${attrName}="${this.escapeXml(attrValue)}"`);
+            attributeString += ` ${attrName}="${this.escapeXml(attrValue)}"`;
+          } else {
+            childContent += this.renderNode(child, substitutions, depth + 1);
           }
         }
       }
-      
-      const attributeString = attributes.join('');
-      
-      // SECOND PASS: Recursively render ALL children (like Python's second loop)
-      // This creates the nested element structure
-      const childContent = element.children
-        ? element.children
-            .map((child: BXmlNode) => this.renderNode(child, substitutions, depth + 1))
-            .join('')
-        : '';
-      
+
       // Build the complete element with proper formatting
       if (childContent.trim()) {
         // If there's content, format it with line breaks and indentation
-        const indent = '  '.repeat(depth);
-        const childIndent = '  '.repeat(depth + 1);
-        const formattedChildContent = childContent.includes('<') 
-          ? '\n' + childContent.split('\n').map((line: string) => line ? childIndent + line : line).join('\n') + '\n' + indent
-          : childContent;
+        const indent = indentFor(depth);
+        const childIndent = indentFor(depth + 1);
+        let formattedChildContent: string;
+        if (childContent.includes('<')) {
+          const body = childContent.indexOf('\n') === -1 ? childIndent + childContent : indentLines(childContent, childIndent);
+          formattedChildContent = '\n' + body + '\n' + indent;
+        } else {
+          formattedChildContent = childContent;
+        }
         return `<${elementName}${attributeString}>${formattedChildContent}</${elementName}>`;
       } else {
         // Self-closing or empty element
@@ -247,9 +384,9 @@ export class ActualTemplateNode {
       case VariantType.Binary:
         // Convert Uint8Array to hex string
         if (value instanceof Uint8Array) {
-          return Array.from(value)
-            .map(b => b.toString(16).padStart(2, '0'))
-            .join('').toUpperCase();
+          let hex = '';
+          for (let i = 0; i < value.length; i++) hex += HEX_UPPER[value[i]];
+          return hex;
         }
         return String(value);
       
@@ -296,7 +433,7 @@ export class ActualTemplateNode {
         // BXml contains embedded binary XML data that needs to be parsed and rendered
         // This follows Python's approach: if isinstance(sub, e_nodes.BXmlTypeNode): sub = render_root_node(sub.root())
         if (value && typeof value === 'object' && 'bxmlData' in value && value.isBXml) {
-          this._log.debug(`🔍 Processing BXml substitution with ${value.bxmlData?.length || 0} bytes`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 Processing BXml substitution with ${value.bxmlData?.length || 0} bytes`);
           
           const bxmlData = value.bxmlData as Uint8Array;
           if (bxmlData && bxmlData.length > 0) {
@@ -307,12 +444,12 @@ export class ActualTemplateNode {
                 const base = (value as any).baseOffset as number;
                 const len = (value as any).length as number;
                 const renderedXml = BXmlParser.parseAndRenderBXmlAtOffset(base, len, chunk);
-                this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
+                if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
                 return renderedXml;
               }
               const renderedXml = BXmlParser.parseAndRenderBXml(bxmlData, chunk);
               
-              this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
+              if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Embedded BXML rendered as: ${renderedXml}`);
               return renderedXml;
             } catch (error) {
               this._log.warn('Error parsing embedded BXML:', error);
@@ -369,6 +506,12 @@ export class ActualTemplateNode {
    * are resolved to literal parts using the embedded substitution list.
    */
   getEventDataLayout(substitutions: any[]): DataLayout {
+    // Most templates' layouts depend only on the template (no embedded-BXML substitutions):
+    // compute once per template instead of re-walking the node tree for every record.
+    if (this._staticEventLayout === undefined) {
+      this._staticEventLayout = this.probeStatic((subs) => this._computeEventDataLayout(subs));
+    }
+    if (this._staticEventLayout) return this._staticEventLayout;
     const key = substitutions && typeof substitutions === 'object' ? substitutions : null;
     if (key) {
       const hit = this._eventLayoutCache.get(key);
@@ -388,7 +531,7 @@ export class ActualTemplateNode {
     // Find first <EventData>
     const eventDataNodes: any[] = [];
     this.walk(root as any, (n: any) => {
-      if (n?.constructor?.name === 'OpenStartElementNode' && (n.name === 'EventData')) {
+      if (n?.kind === 'OpenStartElementNode' && (n.name === 'EventData')) {
         eventDataNodes.push(n);
       }
     });
@@ -427,21 +570,21 @@ export class ActualTemplateNode {
 
     const ed = eventDataNodes[0];
     for (const child of (ed.children || [])) {
-      if (child?.constructor?.name !== 'OpenStartElementNode') continue;
+      if (child?.kind !== 'OpenStartElementNode') continue;
       const name = (child as any).name || '';
       if (name !== 'Data') continue;
       const parts: Array<{ kind: 'lit'; text: string } | { kind: 'sub'; index: number }> = [];
       // Extract Name attribute (if present)
       let dataName: string | null = null;
       try {
-        const attrNodes = (child as any).children?.filter((c: any) => c?.constructor?.name === 'AttributeNode') || [];
+        const attrNodes = (child as any).children?.filter((c: any) => c?.kind === 'AttributeNode') || [];
         for (const an of attrNodes) {
           const attrName = (an as any).name || (an as any).attribute_name || '';
           if (String(attrName).toLowerCase() === 'name') {
             const valNode = (an as any).children?.[0];
-            if (valNode?.constructor?.name === 'ValueTextNode') {
+            if (valNode?.kind === 'ValueTextNode') {
               dataName = String(valNode.data ?? '') || null;
-            } else if (valNode && String(valNode.constructor?.name || '').includes('SubstitutionNode')) {
+            } else if (valNode && String(valNode?.kind || '').includes('SubstitutionNode')) {
               const idx = (valNode as any).substitution_id ?? -1;
               if (idx >= 0 && substitutions && idx < substitutions.length) {
                 dataName = this.formatForMessage(substitutions[idx]) || null;
@@ -454,7 +597,7 @@ export class ActualTemplateNode {
 
       // Walk this <Data> content
       const visit = (n: any) => {
-        const t = n?.constructor?.name;
+        const t = n?.kind;
         if (!t) return;
         if (t === 'ValueTextNode') {
           const txt = String((n as any).data ?? '');
@@ -465,7 +608,7 @@ export class ActualTemplateNode {
           const subIndex = (n as any).substitution_id ?? -1;
           const valueType = (n as any).value_type ?? 0;
           if (subIndex >= 0) {
-            const raw = substitutions?.[subIndex];
+            const raw = valueType === VariantType.BXml ? substitutions?.[subIndex] : undefined;
             // Embedded BXML: parse recursively and push resolved literal parts from its layout
             if (valueType === VariantType.BXml && raw && typeof raw === 'object' && (('bxmlData' in raw) || ('baseOffset' in raw))) {
               try {
@@ -544,6 +687,10 @@ export class ActualTemplateNode {
    * returns entries with names 'Session', 'StartTime'.
    */
   getUserDataLayout(substitutions: any[]): DataLayout {
+    if (this._staticUserLayout === undefined) {
+      this._staticUserLayout = this.probeStatic((subs) => this._computeUserDataLayout(subs));
+    }
+    if (this._staticUserLayout) return this._staticUserLayout;
     const key = substitutions && typeof substitutions === 'object' ? substitutions : null;
     if (key) {
       const hit = this._userLayoutCache.get(key);
@@ -561,7 +708,7 @@ export class ActualTemplateNode {
 
     const userDataNodes: any[] = [];
     this.walk(root, (n: any) => {
-      if (n?.constructor?.name === 'OpenStartElementNode' && (n.name === 'UserData')) {
+      if (n?.kind === 'OpenStartElementNode' && (n.name === 'UserData')) {
         userDataNodes.push(n);
       }
     });
@@ -569,7 +716,7 @@ export class ActualTemplateNode {
     const ud = userDataNodes[0];
     const collectTextParts = (node: any, parts: any[]) => {
       const visit = (n: any) => {
-        const t = n?.constructor?.name;
+        const t = n?.kind;
         if (!t) return;
         if (t === 'ValueTextNode') {
           const txt = String((n as any).data ?? '');
@@ -589,11 +736,11 @@ export class ActualTemplateNode {
     };
 
     // Walk first-level container (e.g., <RmEvent>) children
-    const container = (ud.children || []).find((c: any) => c?.constructor?.name === 'OpenStartElementNode');
+    const container = (ud.children || []).find((c: any) => c?.kind === 'OpenStartElementNode');
     const fieldsParent = container || ud;
 
     // Case A: concrete child elements are present under UserData
-    const openChildren = (fieldsParent.children || []).filter((c: any) => c?.constructor?.name === 'OpenStartElementNode');
+    const openChildren = (fieldsParent.children || []).filter((c: any) => c?.kind === 'OpenStartElementNode');
     if (openChildren.length) {
       for (const ch of openChildren) {
         const fieldName = (ch as any).name || null;
@@ -606,7 +753,7 @@ export class ActualTemplateNode {
 
     // Case B: content injected via BXML substitution directly under UserData
     for (const ch of (fieldsParent.children || [])) {
-      const t = ch?.constructor?.name || '';
+      const t = ch?.kind || '';
       if (t.endsWith('SubstitutionNode')) {
         const subIndex = (ch as any).substitution_id ?? -1;
         const valueType = (ch as any).value_type ?? 0;
@@ -646,7 +793,7 @@ export class ActualTemplateNode {
               const innerRoot: any = embedded.actual.rootElement;
               const children = (innerRoot?.children || []) as any[];
               for (const kid of children) {
-                if (kid?.constructor?.name !== 'OpenStartElementNode') continue;
+                if (kid?.kind !== 'OpenStartElementNode') continue;
                 const fieldName = (kid as any).name || null;
                 const parts: any[] = [];
                 collectTextParts(kid, parts);
@@ -712,7 +859,7 @@ export class ActualTemplateNode {
   private collectParts(node: any): Array<{ kind: 'lit' | 'sub'; text?: string; subIndex?: number }> {
     const parts: Array<{ kind: 'lit' | 'sub'; text?: string; subIndex?: number }> = [];
     const visit = (n: any) => {
-      const t = n?.constructor?.name;
+      const t = n?.kind;
       if (!t) return;
       if (t === 'ValueTextNode') {
         const txt = String((n as any).data ?? '');

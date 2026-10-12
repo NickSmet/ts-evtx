@@ -22,9 +22,9 @@ export class TemplateNode {
     
     // Debug: Show chunk information and absolute positioning
     const absoluteOffset = chunk.offset + offset;
-    this._log.debug(`🏗️ Parsing template at chunk offset 0x${offset.toString(16)} (absolute: 0x${absoluteOffset.toString(16)})`);
-    this._log.debug(`   📦 Chunk bounds: 0x${chunk.offset.toString(16)} to 0x${(chunk.offset + 65536).toString(16)}`);
-    this._log.debug(`   📊 Reader file size: ${reader.size} bytes`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏗️ Parsing template at chunk offset 0x${offset.toString(16)} (absolute: 0x${absoluteOffset.toString(16)})`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   📦 Chunk bounds: 0x${chunk.offset.toString(16)} to 0x${(chunk.offset + 65536).toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   📊 Reader file size: ${reader.size} bytes`);
     
     // Debug: Show raw bytes at this location
     if (ENABLE_DEBUG_LOGGING) {
@@ -51,11 +51,11 @@ export class TemplateNode {
     
     this._dataLength = reader.u32le();     // offset 0x14 (not 0x18!)
     
-    this._log.debug(`🏗️ Header parsed`);
-    this._log.debug(`   Next offset: 0x${this._nextOffset.toString(16)}`);
-    this._log.debug(`   Template ID: ${this._templateId}`);
-    this._log.debug(`   Data length: ${this._dataLength} bytes`);
-    this._log.debug(`   GUID: ${Array.from(this._guid).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏗️ Header parsed`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Next offset: 0x${this._nextOffset.toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Template ID: ${this._templateId}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   Data length: ${this._dataLength} bytes`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`   GUID: ${Array.from(this._guid).map(b => b.toString(16).padStart(2, '0')).join('')}`);
     
     // Analyze header validity
     if (this._dataLength > 65536) {
@@ -86,7 +86,7 @@ export class TemplateNode {
 
   private parseChildren(): void {
     if (this._dataLength === 0) {
-      this._log.debug(`⚠️ No data to parse (data length = 0)`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`⚠️ No data to parse (data length = 0)`);
       return;
     }
 
@@ -95,7 +95,7 @@ export class TemplateNode {
     const dataStart = absoluteOffset + 24;
     const dataEnd = dataStart + this._dataLength;
     
-    this._log.debug(`🔄 Parsing BXML children from 0x${dataStart.toString(16)} to 0x${dataEnd.toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 Parsing BXML children from 0x${dataStart.toString(16)} to 0x${dataEnd.toString(16)}`);
     
     this._reader.seek(dataStart);
     const factory = new NodeFactory(this._reader);
@@ -105,10 +105,10 @@ export class TemplateNode {
       const currentPos = this._reader.tell();
       const token = this._reader.peek();
       
-      this._log.debug(`🔍 At 0x${currentPos.toString(16)}, token=0x${token.toString(16)}`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 At 0x${currentPos.toString(16)}, token=0x${token.toString(16)}`);
       
       if (token === 0x00) { // EndOfStream  
-        this._log.debug(`🔚 EndOfStream found, parsing and stopping`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔚 EndOfStream found, parsing and stopping`);
         try {
           const dummyParent = {
             chunk: this._chunk,
@@ -119,7 +119,7 @@ export class TemplateNode {
           const endNode = factory.fromStream(dummyParent);
           if (endNode) {
             this._children.push(endNode);
-            this._log.debug(`✅ Parsed ${endNode.kind}`);
+            if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ Parsed ${endNode.kind}`);
           }
         } catch (error) {
           this._log.warn(`❌ Error parsing EndOfStream: ${error}`);
@@ -138,13 +138,13 @@ export class TemplateNode {
         const childNode = factory.fromStream(dummyParent);
         if (childNode) {
           this._children.push(childNode);
-          this._log.debug(`✅ Parsed ${childNode.kind}, length=${childNode.length}`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ Parsed ${childNode.kind}, length=${childNode.length}`);
           
           // Show structure for key node types
           if (childNode.kind === 'OpenStartElementNode') {
-            this._log.debug(`   📝 OpenStartElement: name="${(childNode as any).name || 'unknown'}"`);
+            if (ENABLE_DEBUG_LOGGING) this._log.debug(`   📝 OpenStartElement: name="${(childNode as any).name || 'unknown'}"`);
           } else if (childNode.kind === 'StartOfStreamNode') {
-            this._log.debug(`   🔄 StartOfStream marker`);
+            if (ENABLE_DEBUG_LOGGING) this._log.debug(`   🔄 StartOfStream marker`);
           }
         } else {
           this._log.warn(`❌ Failed to parse token 0x${token.toString(16)} at 0x${currentPos.toString(16)}`);
@@ -157,7 +157,7 @@ export class TemplateNode {
       }
     }
     
-    this._log.debug(`🏁 Parsed ${this._children.length} children`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏁 Parsed ${this._children.length} children`);
   }
 
   /**

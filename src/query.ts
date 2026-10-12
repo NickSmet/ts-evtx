@@ -19,6 +19,10 @@ export interface EvtxQuery {
 
   toArray(): Promise<Array<ResolvedEvent & { message?: string }>>;
   forEach(fn: (e: ResolvedEvent & { message?: string }) => void | Promise<void>): Promise<void>;
+  /**
+   * Exports resolve once everything has been flushed. A stream is written in chunks of whole lines
+   * and its backpressure is honoured, so it has to be consumed while the export runs.
+   */
   toJSONL(pathOrStream?: string | NodeJS.WritableStream): Promise<void>;
   toCSV(pathOrStream?: string | NodeJS.WritableStream, opts?: { header?: boolean }): Promise<void>;
   stats(): Promise<any>;
@@ -90,6 +94,21 @@ function matchObject(e: ResolvedEvent, cond: Record<string, unknown>): boolean {
   return true;
 }
 
+/**
+ * Options for the packaged message provider. Versions of @ts-evtx/messages that predate
+ * getMessageCandidates() only find the rows of the packaged catalog (language = NULL) once the
+ * catalog is preloaded, so keep preloading for them; newer versions look rows up on demand.
+ */
+function smartProviderOptions(mod: any, options: Record<string, unknown>): Record<string, unknown> {
+  const looksUpOnDemand = typeof mod.SmartManagedMessageProvider?.prototype?.getMessageCandidates === 'function';
+  return looksUpOnDemand ? options : { ...options, preload: true };
+}
+
+/** Real streams report errors and backpressure through events; a bare `{ write, end }` object cannot. */
+function hasStreamEvents(out: any): boolean {
+  return typeof out.on === 'function' && typeof out.once === 'function' && typeof out.off === 'function';
+}
+
 class EvtxQueryImpl implements EvtxQuery {
   private inputs: string[];
   private opts: EvtxQueryOptions;
@@ -127,7 +146,7 @@ class EvtxQueryImpl implements EvtxQuery {
       try {
         const mod: any = await import('@ts-evtx/messages');
         // SqliteMessageProvider will throw if the DB cannot be opened
-        return new mod.SmartManagedMessageProvider({ customDbPath: dbPath, preload: true });
+        return new mod.SmartManagedMessageProvider(smartProviderOptions(mod, { customDbPath: dbPath }));
       } catch (e: any) {
         throw new Error(`Failed to initialize message provider from path: ${dbPath}. ${e?.message || e}`);
       }
@@ -135,18 +154,10 @@ class EvtxQueryImpl implements EvtxQuery {
     // Auto (implicit): use packaged universal DB
     try {
       const mod: any = await import('@ts-evtx/messages');
-      return new mod.SmartManagedMessageProvider({ preload: true });
+      return new mod.SmartManagedMessageProvider(smartProviderOptions(mod, {}));
     } catch (e: any) {
       throw new Error(`Failed to initialize built-in message provider: ${e?.message || e}`);
     }
-  }
-
-  private applyFilters(events: Array<ResolvedEvent & { message?: string }>): Array<ResolvedEvent & { message?: string }> {
-    let out = events;
-    if (this.predicate) out = out.filter(this.predicate);
-    if (this.takeLast && this.takeLast > 0) out = out.slice(-this.takeLast);
-    if (this.projection) out = out.map(e => ({ ...e, _select: deepPick(e, this.projection!) } as any));
-    return out;
   }
 
   private buildSimpleMessage(e: ResolvedEvent): string {
@@ -161,42 +172,29 @@ class EvtxQueryImpl implements EvtxQuery {
     return `[Template not found]\n${itemsBlock}`;
   }
 
-  async toArray(): Promise<Array<ResolvedEvent & { message?: string }>> {
+  /**
+   * Stream events through the same pipeline the buffered API used:
+   * messages -> predicate -> global last(n) -> projection.
+   *
+   * `forEach` historically honoured neither `last()` nor `select()`, so both are opt-in here
+   * to keep its behaviour unchanged.
+   */
+  private async *iterate(opts: {
+    last: boolean;
+    project: boolean;
+    onFile?: (count: number) => void;
+  }): AsyncGenerator<ResolvedEvent & { message?: string }> {
     const provider = await this.resolveProvider();
-    const all: Array<ResolvedEvent & { message?: string }> = [];
-    const total = this.inputs.length;
-    let done = 0;
-    
-    for (const input of this.inputs) {
-      const exists = typeof input === 'string' ? fs.existsSync(input) : true;
-      if (!exists) continue;
-      
-      const evs = await parseResolvedEvents(input as string, {
-        includeXml: this.opts.includeXml,
-        includeDiagnostics: 'basic',
-        includeDataItems: 'summary',
-        messageProvider: provider,
-        since: this.since,
-        until: this.until,
-        last: this.takeLast,
-      } as any);
-      
-      if (this.messageMode !== 'off') {
-        all.push(...evs.map(e => ({ ...e, message: this.buildSimpleMessage(e) })));
-      } else {
-        all.push(...(evs as any));
-      }
-      done++;
-      this.opts.onProgress?.({ filesDone: done, filesTotal: total, records: evs.length });
-    }
-    return this.applyFilters(all);
-  }
+    const last = opts.last && this.takeLast && this.takeLast > 0 ? this.takeLast : 0;
+    const project = (e: ResolvedEvent & { message?: string }) =>
+      (opts.project && this.projection ? ({ ...e, _select: deepPick(e, this.projection) } as any) : e);
+    // last(n) applies across all inputs, so keep a bounded window (<= 2n events) instead of everything.
+    const window: Array<ResolvedEvent & { message?: string }> = [];
 
-  async forEach(fn: (e: ResolvedEvent & { message?: string }) => void | Promise<void>): Promise<void> {
-    const provider = await this.resolveProvider();
     for (const input of this.inputs) {
       const exists = typeof input === 'string' ? fs.existsSync(input) : true;
       if (!exists) continue;
+      let count = 0;
       for await (const e of readResolvedEvents(input as string, {
         includeXml: this.opts.includeXml,
         includeDiagnostics: 'basic',
@@ -204,37 +202,134 @@ class EvtxQueryImpl implements EvtxQuery {
         messageProvider: provider,
         since: this.since,
         until: this.until,
+        last: opts.last ? this.takeLast : undefined,
       } as any)) {
+        count++;
         const withMsg = this.messageMode !== 'off' ? ({ ...e, message: this.buildSimpleMessage(e) }) : e;
         if (this.predicate && !this.predicate(withMsg as any)) continue;
-        await fn(withMsg as any);
+        if (last) {
+          window.push(withMsg as any);
+          if (window.length > 2 * last) window.splice(0, window.length - last); // amortised O(1)
+          continue;
+        }
+        yield project(withMsg as any);
       }
+      opts.onFile?.(count);
+    }
+
+    if (last) for (const e of window.slice(-last)) yield project(e);
+  }
+
+  private progressReporter(): (count: number) => void {
+    const total = this.inputs.length;
+    let done = 0;
+    return (count) => {
+      done++;
+      this.opts.onProgress?.({ filesDone: done, filesTotal: total, records: count });
+    };
+  }
+
+  async toArray(): Promise<Array<ResolvedEvent & { message?: string }>> {
+    const all: Array<ResolvedEvent & { message?: string }> = [];
+    // push one by one: `all.push(...bigArray)` overflows the call stack above ~100k elements
+    for await (const e of this.iterate({ last: true, project: true, onFile: this.progressReporter() })) all.push(e);
+    return all;
+  }
+
+  async forEach(fn: (e: ResolvedEvent & { message?: string }) => void | Promise<void>): Promise<void> {
+    for await (const e of this.iterate({ last: false, project: false })) await fn(e);
+  }
+
+  /**
+   * Coalesces small writes into large chunks and honours backpressure.
+   * Never waits on a stream that has errored or closed: the failure is surfaced instead.
+   */
+  private static sink(out: NodeJS.WritableStream, chunkChars = 1 << 18) {
+    let buf = '';
+    let failure: Error | undefined;
+    const events = hasStreamEvents(out);
+    const onError = (e: Error) => { failure ??= e; };
+    if (events) out.on('error', onError);
+
+    const flush = async () => {
+      if (failure) throw failure;
+      if (!buf) return;
+      const chunk = buf;
+      buf = '';
+      if (out.write(chunk) !== false || !events) return;
+      await new Promise<void>((resolve, reject) => {
+        const settle = (err?: Error) => {
+          out.off('drain', onDrain); out.off('close', onClose); out.off('error', onErr);
+          if (err) reject(err); else resolve();
+        };
+        const onDrain = () => settle();
+        const onClose = () => settle(failure ?? new Error('Output stream closed before it drained'));
+        const onErr = (e: Error) => settle(e);
+        out.once('drain', onDrain); out.once('close', onClose); out.once('error', onErr);
+      });
+    };
+
+    return {
+      async write(line: string) {
+        buf += line;
+        if (buf.length >= chunkChars) await flush();
+      },
+      flush,
+      dispose() { if (events) out.off('error', onError); },
+    };
+  }
+
+  private static async finish(out: NodeJS.WritableStream): Promise<void> {
+    if (typeof (out as any).end !== 'function') return;
+    if (!hasStreamEvents(out)) { (out as any).end(); return; }
+    await new Promise<void>((resolve, reject) => {
+      out.once('finish', resolve);
+      out.once('error', reject);
+      (out as any).end();
+    });
+  }
+
+  /** Shared driver for line-oriented exports: streams lines to `out` without buffering the result set. */
+  private async export(
+    pathOrStream: string | NodeJS.WritableStream | undefined,
+    lines: (emit: (line: string) => Promise<void>) => Promise<void>,
+  ): Promise<void> {
+    const owned = typeof pathOrStream === 'string';
+    const out = owned ? fs.createWriteStream(pathOrStream as string) : (pathOrStream || process.stdout);
+    const sink = EvtxQueryImpl.sink(out);
+    try {
+      await lines((line) => sink.write(line));
+      await sink.flush();
+      // Like before, every stream except stdout is ended when we are done.
+      if (out !== process.stdout) await EvtxQueryImpl.finish(out);
+    } catch (err) {
+      // A stream we opened must be released (an open fd keeps the process alive); a caller's stream stays theirs.
+      if (owned) (out as any).destroy?.();
+      throw err;
+    } finally {
+      sink.dispose();
     }
   }
 
   async toJSONL(pathOrStream?: string | NodeJS.WritableStream): Promise<void> {
-    const out = typeof pathOrStream === 'string' ? fs.createWriteStream(pathOrStream) : (pathOrStream || process.stdout);
-    const arr = await this.toArray();
-    for (const e of arr) {
-      (out as NodeJS.WritableStream).write(JSON.stringify(e) + '\n');
-    }
-    if (typeof (out as any).end === 'function' && out !== process.stdout) (out as any).end();
+    await this.export(pathOrStream, async (emit) => {
+      for await (const e of this.iterate({ last: true, project: true, onFile: this.progressReporter() })) {
+        await emit(JSON.stringify(e) + '\n');
+      }
+    });
   }
 
   async toCSV(pathOrStream?: string | NodeJS.WritableStream, opts?: { header?: boolean }): Promise<void> {
-    const out = typeof pathOrStream === 'string' ? fs.createWriteStream(pathOrStream) : (pathOrStream || process.stdout);
     const header = opts?.header !== false;
-    const fields = ['timestamp', 'provider.name', 'eventId', 'levelName'];
-    if (header) (out as NodeJS.WritableStream).write('Timestamp,Provider,EventID,Level,Message\n');
-    const arr = await this.toArray();
-    for (const e of arr) {
-      const row = deepPick(e, fields);
-      const providerName = e.provider?.name || '';
-      const rawMsg = this.messageMode !== 'off' ? (e as any).message : (e as any).messageResolution?.final?.message;
-      const msg = String(rawMsg || '').replace(/"/g, '""');
-      (out as NodeJS.WritableStream).write(`"${e.timestamp}","${providerName}",${e.eventId ?? ''},${e.levelName ?? ''},"${msg}"\n`);
-    }
-    if (typeof (out as any).end === 'function' && out !== process.stdout) (out as any).end();
+    await this.export(pathOrStream, async (emit) => {
+      if (header) await emit('Timestamp,Provider,EventID,Level,Message\n');
+      for await (const e of this.iterate({ last: true, project: true, onFile: this.progressReporter() })) {
+        const providerName = e.provider?.name || '';
+        const rawMsg = this.messageMode !== 'off' ? (e as any).message : (e as any).messageResolution?.final?.message;
+        const msg = String(rawMsg || '').replace(/"/g, '""');
+        await emit(`"${e.timestamp}","${providerName}",${e.eventId ?? ''},${e.levelName ?? ''},"${msg}"\n`);
+      }
+    });
   }
 
   async stats(): Promise<any> {

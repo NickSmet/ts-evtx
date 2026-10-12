@@ -34,6 +34,11 @@ export class SmartManagedMessageProvider implements MessageProvider {
     return this.provider!.getMessage(provider, eventId, locale);
   }
 
+  async getMessageCandidates(provider: string, eventId: number, locale?: string): Promise<string[]> {
+    await this.ensure();
+    return this.provider!.getMessageCandidates(provider, eventId, locale);
+  }
+
   getMessageSync(): string | null {
     throw new Error('SmartManagedMessageProvider requires async initialization');
   }

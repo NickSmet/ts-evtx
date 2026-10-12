@@ -4,7 +4,7 @@ import { BXmlNode } from './BXmlNode';
 import { NodeFactory } from './node-factory';
 import { BXmlToken } from './enums';
 import { VariantValueParser } from './VariantValueParser';
-import { getLogger } from '../logging/logger.js';
+import { getLogger, ENABLE_DEBUG_LOGGING } from '../logging/logger.js';
 // Note: Embedded BXML uses the same chunk address space as the outer record.
 
 /**
@@ -25,7 +25,7 @@ export class BXmlParser {
     }
 
     try {
-      this._log.debug(`🔍 Parsing ${bxmlData.length} bytes of embedded BXML`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 Parsing ${bxmlData.length} bytes of embedded BXML`);
       
       // Create a new reader for the embedded BXML data
       const reader = new BinaryReader(bxmlData);
@@ -303,22 +303,22 @@ export class BXmlParser {
           const logical = (node as any).length || 0;
           // Exclude EndOfStream from declared length like python RootNode.children end_tokens
           if (node.kind !== 'EndOfStreamNode') childrenDeclared += logical;
-          this._log.debug(`🔍 Parsed embedded node: ${node.kind} (consumed=${consumed}, logicalLen=${logical})`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 Parsed embedded node: ${node.kind} (consumed=${consumed}, logicalLen=${logical})`);
           
           // Look for TemplateInstanceNode
           if (node.kind === 'TemplateInstanceNode') {
             templateInstance = node;
-            this._log.debug(`🏠 Found TemplateInstanceNode in embedded BXML`);
+            if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏠 Found TemplateInstanceNode in embedded BXML`);
           }
           
           // Stop at EndOfStream
           if (node.kind === 'EndOfStreamNode') {
-            this._log.debug(`🏁 Hit EndOfStream in embedded BXML`);
+            if (ENABLE_DEBUG_LOGGING) this._log.debug(`🏁 Hit EndOfStream in embedded BXML`);
             // Do not include EndOfStream in children length (mirror top-level RootNode)
             break;
           }
         } catch (parseError) {
-          this._log.debug(`🔍 Finished parsing embedded nodes (${nodes.length} nodes)`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔍 Finished parsing embedded nodes (${nodes.length} nodes)`);
           break;
         }
       }
@@ -326,11 +326,11 @@ export class BXmlParser {
       // Parse substitutions if there's remaining data (like Python's RootNode.substitutions())
       if (reader.tell() < reader.size) {
         try {
-          this._log.debug(`🔄 Parsed children consumed=${childrenConsumed} bytes; declared=${childrenDeclared} bytes; computing substitution start`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 Parsed children consumed=${childrenConsumed} bytes; declared=${childrenDeclared} bytes; computing substitution start`);
           substitutions = this.parseEmbeddedSubstitutions(reader, childrenDeclared, childrenConsumed);
-          this._log.debug(`🔄 Found ${substitutions.length} substitutions in embedded BXML`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 Found ${substitutions.length} substitutions in embedded BXML`);
         } catch (subError) {
-          this._log.debug(`🔄 No substitutions found in embedded BXML: ${String(subError)}`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 No substitutions found in embedded BXML: ${String(subError)}`);
         }
       }
       
@@ -404,15 +404,15 @@ export class BXmlParser {
     }
 
     bxmlReader.seek(countPos);
-    this._log.debug(`🔄 Using substitution count ${chosenCount} at 0x${countPos.toString(16)} (u32le)`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 Using substitution count ${chosenCount} at 0x${countPos.toString(16)} (u32le)`);
     bxmlReader.seek(declsPos);
 
     if (chosenCount === 0) {
-      this._log.debug(`🔄 No substitutions in embedded BXML`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 No substitutions in embedded BXML`);
       return [];
     }
 
-    this._log.debug(`🔄 Parsing ${chosenCount} embedded substitutions (validated layout)`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 Parsing ${chosenCount} embedded substitutions (validated layout)`);
 
     try {
       // Phase 1: Read substitution declarations (following Python's RootNode.substitutions())
@@ -430,7 +430,7 @@ export class BXmlParser {
         const padding = bxmlReader.u8();   // 1 byte: padding (to make 4 bytes total)
         
         declarations.push({size, type});
-        this._log.debug(`🔄 Declaration ${i}: size=${size}, type=0x${type.toString(16)}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 Declaration ${i}: size=${size}, type=0x${type.toString(16)}`);
       }
       
       // Phase 2: Read substitution values using declarations
@@ -452,13 +452,13 @@ export class BXmlParser {
         substitutions.push(value);
         
         if (value !== null) {
-          this._log.debug(`✅ Parsed embedded substitution ${i}: type=0x${type.toString(16)}, size=${size}, value=${JSON.stringify(value)}`);
+          if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ Parsed embedded substitution ${i}: type=0x${type.toString(16)}, size=${size}, value=${JSON.stringify(value, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}`);
         } else {
           this._log.warn(`❌ Failed to parse embedded substitution ${i}: type=0x${type.toString(16)}, size=${size}`);
         }
       }
       
-      this._log.debug(`🔄 Successfully parsed ${substitutions.length} embedded substitutions`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔄 Successfully parsed ${substitutions.length} embedded substitutions`);
       return substitutions;
       
     } catch (error) {
@@ -473,22 +473,22 @@ export class BXmlParser {
   private static renderEmbeddedRootNode(rootNode: any): string {
     try {
       if (!rootNode.hasTemplate || !rootNode.templateInstance) {
-        this._log.debug(`🎨 No template in embedded BXML, returning empty`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 No template in embedded BXML, returning empty`);
         return '';
       }
       
       const templateInstance = rootNode.templateInstance;
-      this._log.debug(`🎨 Rendering embedded template`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Rendering embedded template`);
       
       // Get the actual template and render it
       const actualTemplate = templateInstance.getActualTemplate?.();
       if (actualTemplate && actualTemplate.rootElement) {
         const substitutions = rootNode.substitutions || [];
-        this._log.debug(`🎨 Rendering with ${substitutions.length} substitutions`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Rendering with ${substitutions.length} substitutions`);
         
         // Recursively render the embedded XML (like Python's render_root_node(sub.root()))
         const embeddedXml = actualTemplate.renderXml(substitutions);
-        this._log.debug(`🎨 Embedded XML: ${embeddedXml}`);
+        if (ENABLE_DEBUG_LOGGING) this._log.debug(`🎨 Embedded XML: ${embeddedXml}`);
         return embeddedXml;
       }
       

@@ -1,9 +1,10 @@
 import { Block } from "./Block";
+import { UTF8_DECODER } from '../binary/text';
 import { BinaryReader, crc32Checksum } from "../binary/BinaryReader";
 import { Record, InvalidRecordException } from "./Record";
 import { TemplateNode } from './TemplateNode';
 import { ActualTemplateNode } from './ActualTemplateNode';
-import { getLogger } from '../logging/logger.js';
+import { getLogger, ENABLE_DEBUG_LOGGING } from '../logging/logger.js';
 import { BXmlNode } from './BXmlNode';
 // import { TemplateNode } from "./node-specialisations";
 
@@ -39,7 +40,7 @@ export class ChunkHeader extends Block {
   /* Field accessors ----------------------------------------------------------- */
   magic(): string {
     const bytes = this.bytes(OFF_MAGIC, 8);
-    return new TextDecoder('utf-8').decode(bytes);
+    return UTF8_DECODER.decode(bytes);
   }
 
   fileFirstRecordNumber(): bigint {
@@ -250,6 +251,9 @@ export class ChunkHeader extends Block {
    * PERFORMANCE: Now pre-loads all templates on first access
    */
   getTemplate(offset: number): TemplateNode | null {
+    // A record without a template instance has no offset to look up; never parse one from a non-offset.
+    if (!Number.isFinite(offset)) return null;
+
     // PERFORMANCE: Pre-load templates on first access
     if (!this._templatesPreloaded) {
       this._preloadTemplates();
@@ -279,7 +283,7 @@ export class ChunkHeader extends Block {
       return this._templates.get(offset)!;
     }
 
-    this._log.debug(`🔧 addTemplate(): Creating template at offset 0x${offset.toString(16)}`);
+    if (ENABLE_DEBUG_LOGGING) this._log.debug(`🔧 addTemplate(): Creating template at offset 0x${offset.toString(16)}`);
     
     try {
       // Create a new TemplateNode at the specified offset using a cloned reader
@@ -287,7 +291,7 @@ export class ChunkHeader extends Block {
       const cloned = new BinaryReader(this.r.bytesAt(0, this.r.size));
       const templateNode = new TemplateNode(cloned, offset, this);
       this._templates.set(offset, templateNode);
-      this._log.debug(`✅ addTemplate(): Successfully added template, dataLength=${templateNode.dataLength}`);
+      if (ENABLE_DEBUG_LOGGING) this._log.debug(`✅ addTemplate(): Successfully added template, dataLength=${templateNode.dataLength}`);
       return templateNode;
     } catch (error) {
       this._log.error(`❌ addTemplate(): Failed to create template at offset 0x${offset.toString(16)}:`, error);
@@ -300,6 +304,8 @@ export class ChunkHeader extends Block {
    * PERFORMANCE: Benefits from template pre-loading
    */
   getActualTemplate(offset: number): ActualTemplateNode | null {
+    if (!Number.isFinite(offset)) return null;
+
     // PERFORMANCE: Pre-load templates on first access (also preloads ActualTemplateNode)
     if (!this._templatesPreloaded) {
       this._preloadTemplates();

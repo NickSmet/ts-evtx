@@ -1,6 +1,6 @@
 {
   "name": "@ts-evtx/messages",
-  "version": "1.1.1",
+  "version": "1.3.0",
   "description": "Message catalog provider for EVTX event logs (version-aware)",
   "type": "module",
   "main": "dist/index.js",
@@ -42,7 +42,7 @@
     "package.json"
   ],
   "dependencies": {
-    "better-sqlite3": "^11.0.0",
+    "better-sqlite3": "^11.0.0 || ^12.11.1",
     "commander": "^12.1.0",
     "@ts-evtx/core": "^1.0.4"
   },

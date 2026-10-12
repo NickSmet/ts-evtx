@@ -16,8 +16,11 @@ export class SqliteMessageProvider implements MessageProvider {
   private getMsgByIdWithLangStmt?: any;
   private getAllByProviderNameStmt?: any;
   private getAllByProviderIdStmt?: any;
-  private cache?: Map<string, string>;
-  private cacheOrder?: string[];
+  // Bounded memo of lookups (including misses). Insertion-ordered Map => O(1) LRU.
+  private memo?: Map<string, string | null>;
+  private memoMax = 0;
+  private candidateMemo = new Map<string, readonly string[]>();
+  private providerIdMemo = new Map<string, number | null>();
   private preloadMap?: Map<string, string>; // key: provider|eventId|locale
   private info?: { entryCount: number; locales: Set<string> };
   private log = getLogger('messages:SqliteProvider');
@@ -31,10 +34,12 @@ export class SqliteMessageProvider implements MessageProvider {
     this.detectSchema();
     this.prepareStatements();
     this.log.debug(`SQLite messages DB opened at ${dbPath} (readonly=${options?.readonly ?? true})`);
-    const max = options?.maxCacheEntries;
-    if (max && max > 0) {
-      this.cache = new Map();
-      this.cacheOrder = [];
+    // Default-on memo: a log has few distinct (provider, eventId) pairs but many records.
+    // maxCacheEntries: 0 turns every memo off, for a catalog that is written to while it is open.
+    const max = options?.maxCacheEntries ?? 10_000;
+    if (max > 0) {
+      this.memo = new Map();
+      this.memoMax = max;
     }
     if (options?.preload) {
       this.preload();
@@ -68,7 +73,7 @@ export class SqliteMessageProvider implements MessageProvider {
       if (this.schema.hasLanguage) {
         this.getStmtVelocidex = this.db.prepare(
           `SELECT ${selectCol} as msg FROM messages
-           WHERE provider_name = ? AND event_id = ? AND (language = ? OR ? IS NULL)
+           WHERE provider_name = ? AND event_id = ? AND (language = ? OR language IS NULL OR ? IS NULL)
            ORDER BY CASE WHEN language = ? THEN 0 ELSE 1 END LIMIT 1`
         );
         this.getAllByProviderNameStmt = this.db.prepare(
@@ -94,7 +99,7 @@ export class SqliteMessageProvider implements MessageProvider {
     if (this.schema.hasLanguage) {
       this.getMsgByIdWithLangStmt = this.db.prepare(
         `SELECT message FROM messages
-         WHERE provider_id = ? AND event_id = ? AND (language = ? OR ? IS NULL)
+         WHERE provider_id = ? AND event_id = ? AND (language = ? OR language IS NULL OR ? IS NULL)
          ORDER BY CASE WHEN language = ? THEN 0 ELSE 1 END LIMIT 1`
       );
       this.getAllByProviderIdStmt = this.db.prepare(
@@ -162,13 +167,14 @@ export class SqliteMessageProvider implements MessageProvider {
     if (this.preloadMap) {
       return this.preloadMap.get(cacheKey) ?? this.preloadMap.get(`${provider}|${eventId}|`) ?? null;
     }
-    if (this.cache && this.cache.has(cacheKey)) {
-      const val = this.cache.get(cacheKey)!;
-      // maintain LRU order
-      const idx = this.cacheOrder!.indexOf(cacheKey);
-      if (idx >= 0) this.cacheOrder!.splice(idx, 1);
-      this.cacheOrder!.push(cacheKey);
-      return val;
+    if (this.memo) {
+      const hit = this.memo.get(cacheKey);
+      if (hit !== undefined) {
+        // refresh recency (O(1) with an insertion-ordered Map)
+        this.memo.delete(cacheKey);
+        this.memo.set(cacheKey, hit);
+        return hit;
+      }
     }
 
     let val: string | null = null;
@@ -181,9 +187,8 @@ export class SqliteMessageProvider implements MessageProvider {
         val = row?.msg ?? null;
       }
     } else {
-      const pidRow = this.getProviderIdStmt!.get(provider) as any;
-      const pid = pidRow?.id;
-      if (pid == null) return null;
+      const pid = this.providerId(provider);
+      if (pid == null) { this.remember(cacheKey, null); return null; }
       if (this.schema.hasLanguage) {
         const row = this.getMsgByIdWithLangStmt!.get(pid, eventId, locale, locale, locale) as any;
         val = row?.message ?? null;
@@ -193,15 +198,7 @@ export class SqliteMessageProvider implements MessageProvider {
       }
     }
 
-    if (val != null && this.cache) {
-      this.cache.set(cacheKey, val);
-      this.cacheOrder!.push(cacheKey);
-      // Optional: control size if cacheOrder length is too big
-      if (this.cacheOrder!.length > 50000) {
-        const drop = this.cacheOrder!.splice(0, this.cacheOrder!.length - 50000);
-        for (const k of drop) this.cache.delete(k);
-      }
-    }
+    this.remember(cacheKey, val); // also caches misses (null)
     return val;
   }
 
@@ -209,7 +206,36 @@ export class SqliteMessageProvider implements MessageProvider {
     return this.getMessageSync(provider, eventId, locale);
   }
 
+  private providerId(provider: string): number | null {
+    const cached = this.memo ? this.providerIdMemo.get(provider) : undefined;
+    if (cached !== undefined) return cached;
+    const row = this.getProviderIdStmt!.get(provider) as any;
+    const id: number | null = row?.id ?? null;
+    if (this.memo) this.providerIdMemo.set(provider, id);
+    return id;
+  }
+
+  private remember(key: string, val: string | null) {
+    if (!this.memo) return;
+    this.memo.set(key, val);
+    if (this.memo.size > this.memoMax) this.memo.delete(this.memo.keys().next().value as string);
+  }
+
   async getMessageCandidates(provider: string, eventId: number, locale = 'en-US'): Promise<string[]> {
+    if (!this.memo) return this.queryCandidates(provider, eventId, locale);
+    const key = `${provider}|${eventId}|${locale}`;
+    // The memoised array stays private; callers get their own copy (the strings are still shared across events).
+    // Spread, not slice(): V8 copies a frozen array ~20x slower through slice().
+    const hit = this.candidateMemo.get(key);
+    if (hit) return [...hit];
+    const rows = this.queryCandidates(provider, eventId, locale);
+    Object.freeze(rows);
+    this.candidateMemo.set(key, rows);
+    if (this.candidateMemo.size > Math.max(this.memoMax, 1000)) this.candidateMemo.delete(this.candidateMemo.keys().next().value as string);
+    return [...rows];
+  }
+
+  private queryCandidates(provider: string, eventId: number, locale: string): string[] {
     try {
       if (this.schema.kind === 'single-table') {
         if (this.schema.hasLanguage) {
@@ -220,8 +246,7 @@ export class SqliteMessageProvider implements MessageProvider {
           return rows.map(r => r.msg).filter(Boolean);
         }
       } else {
-        const pidRow = this.getProviderIdStmt!.get(provider) as any;
-        const pid = pidRow?.id; if (pid == null) return [];
+        const pid = this.providerId(provider); if (pid == null) return [];
         if (this.schema.hasLanguage) {
           const rows = this.getAllByProviderIdStmt!.all(pid, eventId, locale) as Array<{ message: string, language?: string }>;
           return rows.map(r => (r as any).message).filter(Boolean);

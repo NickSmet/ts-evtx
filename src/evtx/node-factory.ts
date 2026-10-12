@@ -42,7 +42,7 @@ class UnimplementedNode extends BXmlNode {
 
 export class NodeFactory {
   private r: BinaryReader;
-  private _log = getLogger('NodeFactory');
+  private get _log() { return getLogger('NodeFactory'); }
 
   constructor(r: BinaryReader) {
     this.r = r;
